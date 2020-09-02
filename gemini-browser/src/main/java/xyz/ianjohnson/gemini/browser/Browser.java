@@ -19,9 +19,13 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.JTextPane;
 import javax.swing.SwingUtilities;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import xyz.ianjohnson.gemini.client.GeminiClient;
 
 public final class Browser {
+  private static final Logger log = LoggerFactory.getLogger(Browser.class);
+
   private final ExecutorService executorService;
   private final GeminiClient client;
 
@@ -105,6 +109,7 @@ public final class Browser {
                       currentUri = uri;
                     });
               } else {
+                log.error("Error loading page", error);
                 SwingUtilities.invokeLater(() -> statusBar.setText("Error: " + error.getMessage()));
               }
             });

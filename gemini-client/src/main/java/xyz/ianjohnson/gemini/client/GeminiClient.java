@@ -53,6 +53,9 @@ public final class GeminiClient implements Closeable {
       try {
         sslContext =
             SslContextBuilder.forClient()
+                // Note: there appears to be a bug in Java 11 that prevents some connections from
+                // working unless we use only TLSv1.2. Java 14 seems to work, but maybe this should
+                // be checked somehow at runtime and configured appropriately.
                 .protocols("TLSv1.2", "TLSv1.3")
                 .trustManager(new GeminiTrustManager())
                 .build();
