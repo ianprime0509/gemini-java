@@ -10,21 +10,26 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.swing.JButton;
 import javax.swing.JFrame;
+import javax.swing.JLabel;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.JTextPane;
 import javax.swing.SwingUtilities;
 import xyz.ianjohnson.gemini.client.GeminiClient;
-import xyz.ianjohnson.gemini.client.GeminiResponse.BodyHandlers;
 
-public class Browser {
+public final class Browser {
   private final ExecutorService executorService;
   private final GeminiClient client;
+
+  private JFrame frame;
+  private JTextField uriInput;
+  private URI currentUri;
+  private JTextPane contentDisplay;
+  private JLabel statusBar;
 
   public Browser() {
     executorService = Executors.newCachedThreadPool();
@@ -36,7 +41,7 @@ public class Browser {
   }
 
   public void start() {
-    final var frame = new JFrame();
+    frame = new JFrame();
     frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
     frame.setPreferredSize(new Dimension(800, 600));
     frame.addWindowListener(
@@ -58,51 +63,55 @@ public class Browser {
 
     final var navigationPane = new JPanel(new BorderLayout());
     frame.add(navigationPane, BorderLayout.PAGE_START);
-    final var uriInput = new JTextField();
+    uriInput = new JTextField();
+    uriInput.addActionListener(ev -> navigate());
     navigationPane.add(uriInput, BorderLayout.CENTER);
     final var goButton = new JButton("Go");
+    goButton.addActionListener(ev -> navigate());
     navigationPane.add(goButton, BorderLayout.LINE_END);
 
-    final var contentDisplay = new JTextPane();
+    contentDisplay = new BrowserContent(this::navigate);
     frame.add(new JScrollPane(contentDisplay), BorderLayout.CENTER);
 
-    goButton.addActionListener(
-        event -> {
-          final URI uri;
-          try {
-            uri = new URI(uriInput.getText());
-          } catch (final URISyntaxException e) {
-            JOptionPane.showMessageDialog(frame, "Invalid URI: " + e);
-            return;
-          }
-          if (uri.getHost() == null) {
-            JOptionPane.showMessageDialog(frame, "Host required");
-          }
-          client
-              .sendAsync(uri, BodyHandlers.ofString())
-              .whenComplete(
-                  (response, error) -> {
-                    if (response != null) {
-                      final var content =
-                          "URI: "
-                              + response.uri()
-                              + "\n"
-                              + "Status: "
-                              + response.status()
-                              + "\n"
-                              + "Meta: "
-                              + response.meta()
-                              + "\n"
-                              + response.body().orElse("");
-                      SwingUtilities.invokeLater(() -> contentDisplay.setText(content));
-                    } else {
-                      SwingUtilities.invokeLater(
-                          () -> JOptionPane.showMessageDialog(frame, "Error: " + error));
-                    }
-                  });
-        });
+    statusBar = new JLabel("Ready");
+    frame.add(statusBar, BorderLayout.PAGE_END);
 
     frame.pack();
     frame.setVisible(true);
+  }
+
+  private void navigate() {
+    final URI uri;
+    try {
+      uri = new URI(uriInput.getText());
+    } catch (final URISyntaxException e) {
+      statusBar.setText("Invalid URI: " + e);
+      return;
+    }
+    if (uri.getHost() == null) {
+      statusBar.setText("Host required");
+      return;
+    }
+    statusBar.setText("Loading...");
+    client
+        .sendAsync(uri, type -> new GeminiDocumentRenderer().render(type))
+        .whenComplete(
+            (response, error) -> {
+              if (response != null) {
+                SwingUtilities.invokeLater(
+                    () -> {
+                      response.body().ifPresent(contentDisplay::setStyledDocument);
+                      statusBar.setText("Done: " + response.status() + " - " + response.meta());
+                      currentUri = uri;
+                    });
+              } else {
+                SwingUtilities.invokeLater(() -> statusBar.setText("Error: " + error.getMessage()));
+              }
+            });
+  }
+
+  private void navigate(final URI uri) {
+    uriInput.setText(currentUri.resolve(uri).toString());
+    navigate();
   }
 }

@@ -10,6 +10,8 @@ import java.util.Optional;
 /** A MIME type, as defined in RFC 2045. */
 @AutoValue
 public abstract class MimeType {
+  public static final MimeType TEXT_GEMINI = of("text", "gemini");
+
   MimeType() {}
 
   /** Returns a {@link MimeType} with the given type and subtype. */
@@ -45,4 +47,9 @@ public abstract class MimeType {
 
   /** The parameters, with lowercase keys. */
   abstract Map<String, String> parameters();
+
+  /** Returns whether this MIME type is the same as {@code other}, ignoring any parameters. */
+  public final boolean sameType(final MimeType other) {
+    return type().equals(other.type()) && subtype().equals(other.subtype());
+  }
 }
