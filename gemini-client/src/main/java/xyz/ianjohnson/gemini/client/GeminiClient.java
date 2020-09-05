@@ -41,6 +41,18 @@ import xyz.ianjohnson.gemini.client.GeminiResponse.BodyHandler;
  * A Gemini client.
  *
  * <p>The API of this client closely mirrors that of Java's native HttpClient.
+ *
+ * <h1>Server certificate validation</h1>
+ *
+ * <p>As recommended by section 4.2 of the <a
+ * href="https://gemini.circumlunar.space/docs/specification.html">Gemini specification</a>, this
+ * client implements a simple "TOFU" (trust on first use) model, under which a server's certificate
+ * (if valid) is trusted when the host is first visited and stored, and for any further connections
+ * the server's certificate is validated against this original certificate (for as long as the
+ * original certificate is valid).
+ *
+ * <p>To store the certificates associated with each host, this class uses a {@link KeyStore}, where
+ * the alias of the certificate is the name of the host.
  */
 public final class GeminiClient implements Closeable {
   static final String GEMINI_SCHEME = "gemini";
@@ -83,10 +95,22 @@ public final class GeminiClient implements Closeable {
     keyStore = builder.keyStore != null ? builder.keyStore : createDefaultKeyStore();
   }
 
+  /**
+   * Returns a new {@link GeminiClient.Builder}.
+   *
+   * @return a new {@link GeminiClient.Builder}
+   */
   public static Builder newBuilder() {
     return new Builder();
   }
 
+  /**
+   * Returns a new {@link GeminiClient} using default settings. This is equivalent to calling {@code
+   * GeminiClient.newBuilder().build()}; see the documentation of {@link GeminiClient.Builder} for
+   * details about the default settings.
+   *
+   * @return a new {@link GeminiClient} using default settings
+   */
   public static GeminiClient newGeminiClient() {
     return newBuilder().build();
   }
@@ -106,6 +130,17 @@ public final class GeminiClient implements Closeable {
     eventLoopGroup.shutdownGracefully();
   }
 
+  /**
+   * Sends a request for the given URI, blocking if necessary until the response is ready or the
+   * request is interrupted.
+   *
+   * @param uri the URI to request. The request is sent to the host and port specified in the URI.
+   * @param responseBodyHandler the response body handler
+   * @param <T> the type of the decoded response body
+   * @return a {@link GeminiResponse} containing the response details
+   * @throws IOException if an I/O-related exception occurs while executing the request
+   * @throws InterruptedException if the request is interrupted before it completes
+   */
   public <T> GeminiResponse<T> send(final URI uri, final BodyHandler<T> responseBodyHandler)
       throws IOException, InterruptedException {
     final var respFuture = sendAsync(uri, responseBodyHandler);
@@ -127,6 +162,15 @@ public final class GeminiClient implements Closeable {
     }
   }
 
+  /**
+   * Sends an asynchronous request for the given URI.
+   *
+   * @param uri the URI to request. The request is sent to the host and port specified in the URI.
+   * @param responseBodyHandler the response body handler
+   * @param <T> the type of the decoded response body
+   * @return a {@link CompletableFuture} that will eventually complete with the received response
+   *     details or an error encountered while handling the request
+   */
   public <T> CompletableFuture<GeminiResponse<T>> sendAsync(
       final URI uri, final BodyHandler<T> responseBodyHandler) {
     if (uri.getScheme() != null && !GEMINI_SCHEME.equalsIgnoreCase(uri.getScheme())) {
@@ -197,14 +241,29 @@ public final class GeminiClient implements Closeable {
     return future;
   }
 
+  /**
+   * Returns the {@link Executor} configured with this client, if one was provided by the user.
+   *
+   * @return the user-provided {@link Executor} for use with this client
+   */
   public Optional<Executor> executor() {
     return userProvidedExecutor ? Optional.of(executor) : Optional.empty();
   }
 
+  /**
+   * Returns the {@link SslContext} used by this client.
+   *
+   * @return the {@link SslContext} used by this client
+   */
   public SslContext sslContext() {
     return sslContext;
   }
 
+  /**
+   * Returns the {@link KeyStore} used by this client.
+   *
+   * @return the {@link KeyStore} used by this client
+   */
   public KeyStore keyStore() {
     return keyStore;
   }
@@ -268,6 +327,7 @@ public final class GeminiClient implements Closeable {
     }
   }
 
+  /** A builder for {@link GeminiClient GeminiClients}. */
   public static final class Builder {
     private Executor executor;
     private SslContext sslContext;
@@ -275,21 +335,55 @@ public final class GeminiClient implements Closeable {
 
     private Builder() {}
 
+    /**
+     * Sets the {@link Executor} to use for handling asynchronous tasks.
+     *
+     * <p>If no executor is explicitly provided using this method, the client will use an internal
+     * default executor.
+     *
+     * @param executor the {@link Executor} to use for handling asynchronous tasks
+     * @return {@code this}
+     */
     public Builder executor(final Executor executor) {
       this.executor = requireNonNull(executor, "executor");
       return this;
     }
 
+    /**
+     * Sets the {@link SslContext} to use for the client.
+     *
+     * <p>If no {@link SslContext} is explicitly provided using this method, the client will create
+     * a default context supporting TLS 1.2 and 1.3.
+     *
+     * @param sslContext the {@link SslContext} to use for the client
+     * @return {@code this}
+     */
     public Builder sslContext(final SslContext sslContext) {
       this.sslContext = requireNonNull(sslContext, "sslContext");
       return this;
     }
 
+    /**
+     * Sets the {@link KeyStore} in which to store trusted server certificates.
+     *
+     * <p>If no key store is explicitly provided using this method, the client will create a new key
+     * store.
+     *
+     * @param keyStore the {@link KeyStore} in which to store trusted server certificates
+     * @return {@code this}
+     */
     public Builder keyStore(final KeyStore keyStore) {
       this.keyStore = requireNonNull(keyStore, "keyStore");
       return this;
     }
 
+    /**
+     * Builds a new {@link GeminiClient} using the configuration specified using this {@link
+     * Builder}.
+     *
+     * @return a new {@link GeminiClient} using the configuration specified using this {@link
+     *     Builder}.
+     */
     public GeminiClient build() {
       return new GeminiClient(this);
     }

@@ -159,7 +159,8 @@ final class GeminiResponseHandler<T> extends ChannelInboundHandlerAdapter {
         .whenComplete(
             (body, e) -> {
               if (e == null) {
-                future.complete(responseBuilder.body(body).build());
+                future.complete(
+                    body != null ? responseBuilder.body(body).build() : responseBuilder.build());
               } else {
                 future.completeExceptionally(e);
               }

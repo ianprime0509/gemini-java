@@ -111,6 +111,27 @@ public class GeminiResponseHandlerTest {
   }
 
   @Test
+  public void testHandler_withBodyHandlerReturningNull_returnsResponseWithNoBody()
+      throws Throwable {
+    final var future = new CompletableFuture<GeminiResponse<Void>>();
+    final var channel =
+        new EmbeddedChannel(
+            new GeminiResponseHandler<>(TEST_URI, BodyHandlers.discarding(), future));
+    channel.writeInbound(wrappedBuffer(utf8("20 text/plain\r\nThis body will be ignored.\n")));
+    channel.finish();
+    channel.checkException();
+
+    assertThat(getResponse(future))
+        .satisfies(
+            response -> {
+              assertThat(response.uri()).isEqualTo(TEST_URI);
+              assertThat(response.status()).isEqualTo(GeminiStatus.SUCCESS);
+              assertThat(response.meta()).isEqualTo("text/plain");
+              assertThat(response.body()).isEmpty();
+            });
+  }
+
+  @Test
   public void testHandler_withNonSuccessfulResponse_returnsResponse() throws Throwable {
     channel.writeInbound(wrappedBuffer(utf8("51 Not found\r\n")));
     channel.finish();
@@ -360,6 +381,11 @@ public class GeminiResponseHandlerTest {
   }
 
   private GeminiResponse<byte[]> getResponse() throws Throwable {
+    return getResponse(future);
+  }
+
+  private <T> GeminiResponse<T> getResponse(final CompletableFuture<GeminiResponse<T>> future)
+      throws Throwable {
     try {
       return future.get(TIMEOUT_MILLISECONDS, TimeUnit.MILLISECONDS);
     } catch (final ExecutionException e) {

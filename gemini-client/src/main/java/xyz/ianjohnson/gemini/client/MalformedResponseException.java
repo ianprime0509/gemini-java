@@ -2,6 +2,7 @@ package xyz.ianjohnson.gemini.client;
 
 import xyz.ianjohnson.gemini.GeminiException;
 
+/** An exception thrown to indicate that a response received from a Gemini server is malformed. */
 public class MalformedResponseException extends GeminiException {
   public MalformedResponseException() {}
 
