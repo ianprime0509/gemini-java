@@ -10,6 +10,7 @@ import javax.swing.event.EventListenerList;
 
 public class BrowserContent extends JTextPane {
   protected final EventListenerList listenerList = new EventListenerList();
+  private URI hoveredLink;
 
   public BrowserContent() {
     setEditable(false);
@@ -38,9 +39,23 @@ public class BrowserContent extends JTextPane {
   }
 
   protected void fireLinkClicked(final URI uri) {
-    final LinkEvent event = new LinkEvent(this, uri);
+    final var event = new LinkEvent(this, uri);
     for (final var listener : listenerList.getListeners(LinkListener.class)) {
       listener.linkClicked(event);
+    }
+  }
+
+  protected void fireLinkHoverStarted(final URI uri) {
+    final var event = new LinkEvent(this, uri);
+    for (final var listener : listenerList.getListeners(LinkListener.class)) {
+      listener.linkHoverStarted(event);
+    }
+  }
+
+  protected void fireLinkHoverEnded(final URI uri) {
+    final var event = new LinkEvent(this, uri);
+    for (final var listener : listenerList.getListeners(LinkListener.class)) {
+      listener.linkHoverEnded(event);
     }
   }
 
@@ -71,10 +86,20 @@ public class BrowserContent extends JTextPane {
     final var uri = BrowserStyleConstants.getLink(elem.getAttributes());
     if (uri != null) {
       setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-      setToolTipText(uri.toString());
+      if (hoveredLink == null) {
+        fireLinkHoverStarted(uri);
+        hoveredLink = uri;
+      } else if (!hoveredLink.equals(uri)) {
+        fireLinkHoverEnded(hoveredLink);
+        fireLinkHoverStarted(uri);
+        hoveredLink = uri;
+      }
     } else {
       setCursor(Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR));
-      setToolTipText(null);
+      if (hoveredLink != null) {
+        fireLinkHoverEnded(hoveredLink);
+        hoveredLink = null;
+      }
     }
   }
 }

@@ -13,7 +13,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.swing.JButton;
 import javax.swing.JFrame;
-import javax.swing.JLabel;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
@@ -41,7 +40,7 @@ public class Browser extends JFrame {
 
   private final BrowserNavigation navigation;
   private final BrowserContent contentDisplay;
-  private final JLabel statusBar;
+  private final BrowserStatusBar statusBar;
 
   public Browser() {
     executorService = Executors.newCachedThreadPool();
@@ -74,9 +73,25 @@ public class Browser extends JFrame {
 
     contentDisplay = new BrowserContent();
     add(new JScrollPane(contentDisplay), BorderLayout.CENTER);
-    contentDisplay.addLinkListener(e -> navigation.navigate(e.getUri()));
+    contentDisplay.addLinkListener(
+        new LinkListener() {
+          @Override
+          public void linkClicked(final LinkEvent e) {
+            navigation.navigate(e.getUri());
+          }
 
-    statusBar = new JLabel("Ready");
+          @Override
+          public void linkHoverStarted(final LinkEvent e) {
+            statusBar.setTemporaryText(e.getUri().toString());
+          }
+
+          @Override
+          public void linkHoverEnded(final LinkEvent e) {
+            statusBar.setTemporaryText(null);
+          }
+        });
+
+    statusBar = new BrowserStatusBar();
     add(statusBar, BorderLayout.PAGE_END);
 
     pack();
