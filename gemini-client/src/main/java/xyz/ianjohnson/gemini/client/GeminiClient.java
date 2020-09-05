@@ -4,6 +4,7 @@ import static io.netty.buffer.Unpooled.wrappedBuffer;
 import static java.util.Objects.requireNonNull;
 
 import io.netty.bootstrap.Bootstrap;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -11,16 +12,27 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.SslHandler;
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import javax.net.ssl.SSLException;
+import javax.net.ssl.SSLPeerUnverifiedException;
+import javax.net.ssl.SSLSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import xyz.ianjohnson.gemini.client.GeminiResponse.BodyHandler;
 
 /**
@@ -31,11 +43,13 @@ import xyz.ianjohnson.gemini.client.GeminiResponse.BodyHandler;
 public final class GeminiClient implements Closeable {
   static final String GEMINI_SCHEME = "gemini";
   static final int GEMINI_PORT = 1965;
+  private static final Logger log = LoggerFactory.getLogger(GeminiClient.class);
 
   private final Executor executor;
   private final boolean userProvidedExecutor;
   private final EventLoopGroup eventLoopGroup;
   private final SslContext sslContext;
+  private final KeyStore keyStore;
 
   private GeminiClient(final Builder builder) {
     if (builder.executor != null) {
@@ -57,12 +71,14 @@ public final class GeminiClient implements Closeable {
                 // working unless we use only TLSv1.2. Java 14 seems to work, but maybe this should
                 // be checked somehow at runtime and configured appropriately.
                 .protocols("TLSv1.2", "TLSv1.3")
-                .trustManager(new GeminiTrustManager())
+                .trustManager(InsecureTrustManagerFactory.INSTANCE)
                 .build();
       } catch (final SSLException e) {
         throw new IllegalStateException("Failed to construct SslContext", e);
       }
     }
+
+    keyStore = builder.keyStore != null ? builder.keyStore : createDefaultKeyStore();
   }
 
   public static Builder newBuilder() {
@@ -71,6 +87,16 @@ public final class GeminiClient implements Closeable {
 
   public static GeminiClient newGeminiClient() {
     return newBuilder().build();
+  }
+
+  private static KeyStore createDefaultKeyStore() {
+    try {
+      final var keyStore = KeyStore.getInstance("PKCS12");
+      keyStore.load(null, null);
+      return keyStore;
+    } catch (final Exception e) {
+      throw new IllegalStateException("Failed to construct default KeyStore", e);
+    }
   }
 
   @Override
@@ -108,6 +134,7 @@ public final class GeminiClient implements Closeable {
       throw new IllegalArgumentException("URI missing host");
     }
     final var port = uri.getPort() != -1 ? uri.getPort() : GEMINI_PORT;
+    log.debug("Connecting to host {} on port {}", uri.getHost(), port);
 
     final CompletableFuture<GeminiResponse<T>> future = new FutureImpl<>();
     final var bootstrap =
@@ -119,30 +146,51 @@ public final class GeminiClient implements Closeable {
                   @Override
                   protected void initChannel(final SocketChannel ch) {
                     ch.pipeline()
-                        .addLast(sslContext.newHandler(ch.alloc(), uri.getHost(), port))
+                        .addLast("ssl", sslContext.newHandler(ch.alloc(), uri.getHost(), port))
                         .addLast(new GeminiResponseHandler<>(uri, responseBodyHandler, future));
                   }
                 });
 
-    final var channelFuture = bootstrap.connect(uri.getHost(), port);
-    channelFuture.addListener(
-        channelReady -> {
-          if (!channelFuture.isSuccess()) {
-            future.completeExceptionally(channelFuture.cause());
-            return;
-          }
+    bootstrap
+        .connect(uri.getHost(), port)
+        .addListener(
+            (final ChannelFuture channelFuture) -> {
+              if (!channelFuture.isSuccess()) {
+                future.completeExceptionally(channelFuture.cause());
+                return;
+              }
 
-          final var channel = channelFuture.channel();
-          future.whenComplete((response, e) -> channel.close());
-          final var writeFuture =
-              channel.writeAndFlush(wrappedBuffer((uri + "\r\n").getBytes(StandardCharsets.UTF_8)));
-          writeFuture.addListener(
-              writeDone -> {
-                if (!writeFuture.isSuccess()) {
-                  future.completeExceptionally(writeFuture.cause());
-                }
-              });
-        });
+              final var channel = channelFuture.channel();
+              future.whenComplete((response, e) -> channel.close());
+
+              final var sslHandler = (SslHandler) channel.pipeline().get("ssl");
+              sslHandler
+                  .handshakeFuture()
+                  .addListener(
+                      handshakeFuture -> {
+                        if (!handshakeFuture.isSuccess()) {
+                          future.completeExceptionally(handshakeFuture.cause());
+                          return;
+                        }
+
+                        try {
+                          validatePeerCertificate(sslHandler.engine().getSession());
+                        } catch (final CertificateException e) {
+                          future.completeExceptionally(e);
+                          return;
+                        }
+
+                        channel
+                            .writeAndFlush(
+                                wrappedBuffer((uri + "\r\n").getBytes(StandardCharsets.UTF_8)))
+                            .addListener(
+                                writeFuture -> {
+                                  if (!writeFuture.isSuccess()) {
+                                    future.completeExceptionally(writeFuture.cause());
+                                  }
+                                });
+                      });
+            });
 
     return future;
   }
@@ -155,9 +203,49 @@ public final class GeminiClient implements Closeable {
     return sslContext;
   }
 
+  public KeyStore keyStore() {
+    return keyStore;
+  }
+
+  private void validatePeerCertificate(final SSLSession session) throws CertificateException {
+    final var host = session.getPeerHost();
+    final Certificate[] peerCerts;
+    try {
+      peerCerts = session.getPeerCertificates();
+    } catch (final SSLPeerUnverifiedException e) {
+      throw new CertificateException("Could not verify peer", e);
+    }
+    if (peerCerts.length == 0 || !(peerCerts[0] instanceof X509Certificate)) {
+      throw new CertificateException("No valid certificate supplied by peer");
+    }
+    final var peerCert = (X509Certificate) peerCerts[0];
+
+    final Certificate knownCert;
+    try {
+      knownCert = keyStore.getCertificate(host);
+    } catch (final KeyStoreException e) {
+      throw new CertificateException(
+          "Could not look for existing known certificate in key store", e);
+    }
+    if (knownCert == null) {
+      log.info(
+          "Connecting to new host {} and trusting certificate with fingerprint {}",
+          host,
+          Certificates.getFingerprint(peerCert));
+      try {
+        keyStore.setCertificateEntry(host, peerCert);
+      } catch (final KeyStoreException e) {
+        throw new CertificateException("Could not store certificate for new host in key store", e);
+      }
+    } else if (!knownCert.equals(peerCert)) {
+      throw new CertificateChangedException(host, peerCert, knownCert);
+    }
+  }
+
   public static final class Builder {
     private Executor executor;
     private SslContext sslContext;
+    private KeyStore keyStore;
 
     private Builder() {}
 
@@ -168,6 +256,11 @@ public final class GeminiClient implements Closeable {
 
     public Builder sslContext(final SslContext sslContext) {
       this.sslContext = requireNonNull(sslContext, "sslContext");
+      return this;
+    }
+
+    public Builder keyStore(final KeyStore keyStore) {
+      this.keyStore = requireNonNull(keyStore, "keyStore");
       return this;
     }
 

@@ -3,6 +3,7 @@ package xyz.ianjohnson.gemini.client;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.netty.handler.ssl.SslContextBuilder;
+import java.security.KeyStore;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.net.ssl.SSLException;
@@ -29,6 +30,15 @@ public class GeminiClientTest {
     final var sslContext = SslContextBuilder.forClient().build();
     try (final var client = GeminiClient.newBuilder().sslContext(sslContext).build()) {
       assertThat(client.sslContext()).isEqualTo(sslContext);
+    }
+  }
+
+  @Test
+  public void testKeyStore_returnsKeyStore() throws Exception {
+    final var keyStore = KeyStore.getInstance("PKCS12");
+    keyStore.load(null, null);
+    try (final var client = GeminiClient.newBuilder().keyStore(keyStore).build()) {
+      assertThat(client.keyStore()).isEqualTo(keyStore);
     }
   }
 }

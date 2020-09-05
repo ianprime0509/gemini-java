@@ -1,11 +1,14 @@
 package xyz.ianjohnson.gemini.browser;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.security.KeyStoreException;
+import java.security.cert.Certificate;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.swing.JButton;
@@ -19,8 +22,15 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.JTextPane;
 import javax.swing.SwingUtilities;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.DefaultStyledDocument;
+import javax.swing.text.SimpleAttributeSet;
+import javax.swing.text.StyleConstants;
+import javax.swing.text.StyledDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import xyz.ianjohnson.gemini.client.CertificateChangedException;
+import xyz.ianjohnson.gemini.client.Certificates;
 import xyz.ianjohnson.gemini.client.GeminiClient;
 
 public final class Browser {
@@ -47,6 +57,7 @@ public final class Browser {
   public void start() {
     frame = new JFrame();
     frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+    frame.setMinimumSize(new Dimension(200, 200));
     frame.setPreferredSize(new Dimension(800, 600));
     frame.addWindowListener(
         new WindowAdapter() {
@@ -108,6 +119,10 @@ public final class Browser {
                       statusBar.setText("Done: " + response.status() + " - " + response.meta());
                       currentUri = uri;
                     });
+              } else if (error instanceof CertificateChangedException) {
+                final var certError = (CertificateChangedException) error;
+                handleCertificateChange(
+                    certError.host(), certError.newCertificate(), certError.trustedCertificate());
               } else {
                 log.error("Error loading page", error);
                 SwingUtilities.invokeLater(() -> statusBar.setText("Error: " + error.getMessage()));
@@ -118,5 +133,55 @@ public final class Browser {
   private void navigate(final URI uri) {
     uriInput.setText(currentUri.resolve(uri).toString());
     navigate();
+  }
+
+  private void handleCertificateChange(
+      final String host, final Certificate newCert, final Certificate trustedCert) {
+    statusBar.setText("Certificate mismatch!");
+
+    final StyledDocument doc = new DefaultStyledDocument();
+    final var warningStyle = doc.addStyle("warning", null);
+    StyleConstants.setBold(warningStyle, true);
+    StyleConstants.setFontSize(warningStyle, 24);
+    StyleConstants.setForeground(warningStyle, Color.RED);
+
+    try {
+      doc.insertString(doc.getLength(), "WARNING\n", warningStyle);
+      doc.insertString(
+          doc.getLength(),
+          "Certificate fingerprint mismatch! Something fishy may be going on.\n",
+          null);
+      doc.insertString(
+          doc.getLength(),
+          "Trusted certificate fingerprint: "
+              + Certificates.getFingerprintUnchecked(trustedCert)
+              + "\n",
+          null);
+      doc.insertString(
+          doc.getLength(),
+          "New certificate fingerprint: " + Certificates.getFingerprintUnchecked(newCert) + "\n",
+          null);
+      doc.insertString(
+          doc.getLength(),
+          "\nIf you are absolutely sure that you trust the new certificate, you may replace the old one by clicking below.\n",
+          null);
+
+      final var trustButton = new JButton("Trust new certificate");
+      trustButton.addActionListener(
+          ev -> {
+            try {
+              client.keyStore().setCertificateEntry(host, newCert);
+            } catch (final KeyStoreException e) {
+              statusBar.setText("Error updating key store: " + e);
+            }
+          });
+      final var buttonAttributes = new SimpleAttributeSet();
+      StyleConstants.setComponent(buttonAttributes, trustButton);
+      doc.insertString(doc.getLength(), "Trust new certificate", buttonAttributes);
+    } catch (final BadLocationException ignored) {
+      // impossible
+    }
+
+    contentDisplay.setStyledDocument(doc);
   }
 }

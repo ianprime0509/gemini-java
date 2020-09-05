@@ -6,7 +6,6 @@ import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
 import java.net.URI;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
 import javax.swing.JTextPane;
 
 class BrowserContent extends JTextPane {
