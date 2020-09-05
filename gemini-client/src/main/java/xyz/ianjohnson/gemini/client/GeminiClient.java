@@ -22,6 +22,8 @@ import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
+import java.security.cert.CertificateExpiredException;
+import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.X509Certificate;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -219,17 +221,41 @@ public final class GeminiClient implements Closeable {
       throw new CertificateException("No valid certificate supplied by peer");
     }
     final var peerCert = (X509Certificate) peerCerts[0];
+    peerCert.checkValidity();
 
-    final Certificate knownCert;
+    final X509Certificate knownCert;
     try {
-      knownCert = keyStore.getCertificate(host);
+      final var tmp = keyStore.getCertificate(host);
+      if (tmp != null && !(tmp instanceof X509Certificate)) {
+        throw new CertificateException("Known certificate is not an X509Certificate");
+      }
+      knownCert = (X509Certificate) tmp;
     } catch (final KeyStoreException e) {
       throw new CertificateException(
           "Could not look for existing known certificate in key store", e);
     }
-    if (knownCert == null) {
+    var knownCertValid = knownCert != null;
+    try {
+      if (knownCertValid) {
+        knownCert.checkValidity();
+      }
+    } catch (final CertificateNotYetValidException e) {
+      log.warn(
+          "Known certificate for host {} ({}) is somehow not yet valid",
+          host,
+          Certificates.getFingerprint(knownCert));
+      knownCertValid = false;
+    } catch (final CertificateExpiredException e) {
       log.info(
-          "Connecting to new host {} and trusting certificate with fingerprint {}",
+          "Known certificate for host {} ({}) is expired",
+          host,
+          Certificates.getFingerprint(knownCert));
+      knownCertValid = false;
+    }
+
+    if (!knownCertValid) {
+      log.info(
+          "Trusting new certificate for host {} with fingerprint {}",
           host,
           Certificates.getFingerprint(peerCert));
       try {
