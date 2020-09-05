@@ -22,7 +22,7 @@ public abstract class GeminiDocument {
       if (line.startsWith("```")) {
         if (preformatted == null) {
           // Start of preformatted text
-          altText = line.substring(3);
+          altText = line.substring(3).strip();
           if (altText.isEmpty()) {
             altText = null;
           }
@@ -45,7 +45,7 @@ public abstract class GeminiDocument {
           content.add(GeminiTextLine.of(line));
           continue;
         }
-        final var title = parts.length > 1 && !parts[1].isBlank() ? parts[1] : null;
+        final var title = parts.length > 1 && !parts[1].isBlank() ? parts[1].strip() : null;
         content.add(GeminiLinkLine.of(uri, title));
       } else if (line.startsWith("#")) {
         final int level;
@@ -60,13 +60,13 @@ public abstract class GeminiDocument {
           level = 1;
           text = line.substring(1);
         }
-        content.add(GeminiHeadingLine.of(level, text.stripLeading()));
+        content.add(GeminiHeadingLine.of(level, text.strip()));
       } else if (line.startsWith("* ")) {
-        content.add(GeminiUnorderedListItem.of(line.substring(2)));
+        content.add(GeminiUnorderedListItem.of(line.substring(2).strip()));
       } else if (line.startsWith(">")) {
-        content.add(GeminiQuoteLine.of(line.substring(1)));
+        content.add(GeminiQuoteLine.of(line.substring(1).strip()));
       } else {
-        content.add(GeminiTextLine.of(line));
+        content.add(GeminiTextLine.of(line.strip()));
       }
     }
     // Handle unterminated preformatted content
