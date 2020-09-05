@@ -5,15 +5,13 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
 import java.net.URI;
-import java.util.function.Consumer;
 import javax.swing.JTextPane;
+import javax.swing.event.EventListenerList;
 
-class BrowserContent extends JTextPane {
-  private final Consumer<URI> navigate;
+public class BrowserContent extends JTextPane {
+  protected final EventListenerList listenerList = new EventListenerList();
 
-  BrowserContent(final Consumer<URI> navigate) {
-    this.navigate = navigate;
-
+  public BrowserContent() {
     setEditable(false);
     addMouseMotionListener(
         new MouseMotionAdapter() {
@@ -31,6 +29,21 @@ class BrowserContent extends JTextPane {
         });
   }
 
+  public void addLinkListener(final LinkListener listener) {
+    listenerList.add(LinkListener.class, listener);
+  }
+
+  public void removeLinkListener(final LinkListener listener) {
+    listenerList.remove(LinkListener.class, listener);
+  }
+
+  protected void fireLinkClicked(final URI uri) {
+    final LinkEvent event = new LinkEvent(this, uri);
+    for (final var listener : listenerList.getListeners(LinkListener.class)) {
+      listener.linkClicked(event);
+    }
+  }
+
   private void handleMouseClicked(final MouseEvent e) {
     if (e.getButton() != MouseEvent.BUTTON1) {
       return;
@@ -41,9 +54,9 @@ class BrowserContent extends JTextPane {
       return;
     }
     final var elem = getStyledDocument().getCharacterElement(pos);
-    final var uri = elem.getAttributes().getAttribute(DocumentRenderer.Link);
+    final var uri = BrowserStyleConstants.getLink(elem.getAttributes());
     if (uri != null) {
-      navigate.accept((URI) uri);
+      fireLinkClicked(uri);
     }
   }
 
@@ -55,7 +68,7 @@ class BrowserContent extends JTextPane {
       return;
     }
     final var elem = getStyledDocument().getCharacterElement(pos);
-    final var uri = elem.getAttributes().getAttribute(DocumentRenderer.Link);
+    final var uri = BrowserStyleConstants.getLink(elem.getAttributes());
     if (uri != null) {
       setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
       setToolTipText(uri.toString());

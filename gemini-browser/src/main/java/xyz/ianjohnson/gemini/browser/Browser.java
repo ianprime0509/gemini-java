@@ -1,12 +1,11 @@
 package xyz.ianjohnson.gemini.browser;
 
 import java.awt.BorderLayout;
-import java.awt.Color;
+import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.security.KeyStoreException;
 import java.security.cert.Certificate;
 import java.util.concurrent.ExecutorService;
@@ -17,11 +16,9 @@ import javax.swing.JLabel;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
-import javax.swing.JPanel;
 import javax.swing.JScrollPane;
-import javax.swing.JTextField;
-import javax.swing.JTextPane;
 import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultStyledDocument;
 import javax.swing.text.SimpleAttributeSet;
@@ -33,33 +30,26 @@ import xyz.ianjohnson.gemini.client.CertificateChangedException;
 import xyz.ianjohnson.gemini.client.Certificates;
 import xyz.ianjohnson.gemini.client.GeminiClient;
 
-public final class Browser {
+public class Browser extends JFrame {
   private static final Logger log = LoggerFactory.getLogger(Browser.class);
 
   private final ExecutorService executorService;
   private final GeminiClient client;
+  private final BrowserTheme theme;
 
-  private JFrame frame;
-  private JTextField uriInput;
-  private URI currentUri;
-  private JTextPane contentDisplay;
-  private JLabel statusBar;
+  private final BrowserNavigation navigation;
+  private final BrowserContent contentDisplay;
+  private final JLabel statusBar;
 
   public Browser() {
     executorService = Executors.newCachedThreadPool();
     client = GeminiClient.newBuilder().executor(executorService).build();
-  }
+    theme = BrowserTheme.defaultTheme();
 
-  public static void main(final String... args) {
-    SwingUtilities.invokeLater(() -> new Browser().start());
-  }
-
-  public void start() {
-    frame = new JFrame();
-    frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-    frame.setMinimumSize(new Dimension(200, 200));
-    frame.setPreferredSize(new Dimension(800, 600));
-    frame.addWindowListener(
+    setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+    setMinimumSize(new Dimension(200, 200));
+    setPreferredSize(new Dimension(800, 600));
+    addWindowListener(
         new WindowAdapter() {
           @Override
           public void windowClosed(final WindowEvent e) {
@@ -69,47 +59,50 @@ public final class Browser {
         });
 
     final var menuBar = new JMenuBar();
-    frame.setJMenuBar(menuBar);
+    setJMenuBar(menuBar);
     final var fileMenu = new JMenu("File");
     menuBar.add(fileMenu);
     final var exitMenuItem = new JMenuItem("Exit");
-    exitMenuItem.addActionListener(ev -> frame.dispose());
     fileMenu.add(exitMenuItem);
+    exitMenuItem.addActionListener(e -> dispose());
 
-    final var navigationPane = new JPanel(new BorderLayout());
-    frame.add(navigationPane, BorderLayout.PAGE_START);
-    uriInput = new JTextField();
-    uriInput.addActionListener(ev -> navigate());
-    navigationPane.add(uriInput, BorderLayout.CENTER);
-    final var goButton = new JButton("Go");
-    goButton.addActionListener(ev -> navigate());
-    navigationPane.add(goButton, BorderLayout.LINE_END);
+    navigation = new BrowserNavigation();
+    add(navigation, BorderLayout.PAGE_START);
+    navigation.addNavigationListener(e -> load(e.getUri()));
 
-    contentDisplay = new BrowserContent(this::navigate);
-    frame.add(new JScrollPane(contentDisplay), BorderLayout.CENTER);
+    contentDisplay = new BrowserContent();
+    add(new JScrollPane(contentDisplay), BorderLayout.CENTER);
+    contentDisplay.addLinkListener(e -> navigation.navigate(e.getUri()));
 
     statusBar = new JLabel("Ready");
-    frame.add(statusBar, BorderLayout.PAGE_END);
+    add(statusBar, BorderLayout.PAGE_END);
 
-    frame.pack();
-    frame.setVisible(true);
+    pack();
   }
 
-  private void navigate() {
-    final URI uri;
+  public static void main(final String... args) {
     try {
-      uri = new URI(uriInput.getText());
-    } catch (final URISyntaxException e) {
-      statusBar.setText("Invalid URI: " + e);
-      return;
+      for (final var laf : UIManager.getInstalledLookAndFeels()) {
+        if ("Nimbus".equals(laf.getName())) {
+          UIManager.setLookAndFeel(laf.getClassName());
+          break;
+        }
+      }
+      log.error("Nimbus look and feel not found; using default");
+    } catch (final Exception e) {
+      log.error("Failed to set Nimbus look and feel; using default", e);
     }
+    SwingUtilities.invokeLater(() -> new Browser().setVisible(true));
+  }
+
+  private void load(final URI uri) {
     if (uri.getHost() == null) {
       statusBar.setText("Host required");
       return;
     }
     statusBar.setText("Loading...");
     client
-        .sendAsync(uri, type -> new GeminiDocumentRenderer().render(type))
+        .sendAsync(uri, type -> new GeminiDocumentRenderer().render(type, theme))
         .whenComplete(
             (response, error) -> {
               if (response != null) {
@@ -117,7 +110,6 @@ public final class Browser {
                     () -> {
                       response.body().ifPresent(contentDisplay::setStyledDocument);
                       statusBar.setText("Done: " + response.status() + " - " + response.meta());
-                      currentUri = uri;
                     });
               } else if (error instanceof CertificateChangedException) {
                 final var certError = (CertificateChangedException) error;
@@ -130,49 +122,40 @@ public final class Browser {
             });
   }
 
-  private void navigate(final URI uri) {
-    uriInput.setText(currentUri.resolve(uri).toString());
-    navigate();
-  }
-
   private void handleCertificateChange(
       final String host, final Certificate newCert, final Certificate trustedCert) {
     statusBar.setText("Certificate mismatch!");
 
     final StyledDocument doc = new DefaultStyledDocument();
-    final var warningStyle = doc.addStyle("warning", null);
-    StyleConstants.setBold(warningStyle, true);
-    StyleConstants.setFontSize(warningStyle, 24);
-    StyleConstants.setForeground(warningStyle, Color.RED);
 
     try {
-      doc.insertString(doc.getLength(), "WARNING\n", warningStyle);
-      doc.insertString(
-          doc.getLength(),
-          "Certificate fingerprint mismatch! Something fishy may be going on.\n",
-          null);
-      doc.insertString(
-          doc.getLength(),
-          "Trusted certificate fingerprint: "
+      doc.insertString(doc.getLength(), "WARNING", theme.h1Style());
+      doc.insertString(doc.getLength(), "\n\n", theme.textStyle());
+      final var text =
+          "Certificate fingerprint mismatch!\n"
+              + "\n"
+              + "This may mean that someone has tampered with your connection, or just that the server has updated its certificate.\n"
+              + "\n"
+              + "Trusted certificate fingerprint: "
               + Certificates.getFingerprintUnchecked(trustedCert)
-              + "\n",
-          null);
-      doc.insertString(
-          doc.getLength(),
-          "New certificate fingerprint: " + Certificates.getFingerprintUnchecked(newCert) + "\n",
-          null);
-      doc.insertString(
-          doc.getLength(),
-          "\nIf you are absolutely sure that you trust the new certificate, you may replace the old one by clicking below.\n",
-          null);
+              + "\n"
+              + "New certificate fingerprint: "
+              + Certificates.getFingerprintUnchecked(newCert)
+              + "\n"
+              + "\n"
+              + "If you are absolutely sure that you trust the new certificate, you may replace the old one by clicking the button below.\n"
+              + "\n";
+      doc.insertString(doc.getLength(), text, theme.textStyle());
 
       final var trustButton = new JButton("Trust new certificate");
+      trustButton.setCursor(Cursor.getDefaultCursor());
       trustButton.addActionListener(
-          ev -> {
+          e -> {
             try {
               client.keyStore().setCertificateEntry(host, newCert);
-            } catch (final KeyStoreException e) {
-              statusBar.setText("Error updating key store: " + e);
+              navigation.refresh();
+            } catch (final KeyStoreException kse) {
+              statusBar.setText("Error updating key store: " + kse);
             }
           });
       final var buttonAttributes = new SimpleAttributeSet();
