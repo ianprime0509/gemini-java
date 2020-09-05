@@ -8,6 +8,7 @@ import java.awt.event.WindowEvent;
 import java.net.URI;
 import java.security.KeyStoreException;
 import java.security.cert.Certificate;
+import java.util.ServiceLoader;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.swing.JButton;
@@ -19,16 +20,17 @@ import javax.swing.JMenuItem;
 import javax.swing.JScrollPane;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
-import javax.swing.text.BadLocationException;
-import javax.swing.text.DefaultStyledDocument;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import xyz.ianjohnson.gemini.MimeType;
 import xyz.ianjohnson.gemini.client.CertificateChangedException;
 import xyz.ianjohnson.gemini.client.Certificates;
 import xyz.ianjohnson.gemini.client.GeminiClient;
+import xyz.ianjohnson.gemini.client.GeminiResponse;
+import xyz.ianjohnson.gemini.client.GeminiResponse.BodySubscriber;
 
 public class Browser extends JFrame {
   private static final Logger log = LoggerFactory.getLogger(Browser.class);
@@ -102,68 +104,94 @@ public class Browser extends JFrame {
     }
     statusBar.setText("Loading...");
     client
-        .sendAsync(uri, type -> new GeminiDocumentRenderer().render(type, theme))
+        .sendAsync(uri, this::render)
         .whenComplete(
             (response, error) -> {
               if (response != null) {
-                SwingUtilities.invokeLater(
-                    () -> {
-                      response.body().ifPresent(contentDisplay::setStyledDocument);
-                      statusBar.setText("Done: " + response.status() + " - " + response.meta());
-                    });
-              } else if (error instanceof CertificateChangedException) {
-                final var certError = (CertificateChangedException) error;
-                handleCertificateChange(
-                    certError.host(), certError.newCertificate(), certError.trustedCertificate());
+                handleResponse(response);
               } else {
-                log.error("Error loading page", error);
-                SwingUtilities.invokeLater(() -> statusBar.setText("Error: " + error.getMessage()));
+                handleResponse(error);
               }
             });
+  }
+
+  private BodySubscriber<StyledDocument> render(final MimeType type) {
+    for (final var renderer : ServiceLoader.load(DocumentRenderer.class)) {
+      if (renderer.canRender(type)) {
+        return renderer.render(type, theme);
+      }
+    }
+    throw new UnsupportedMimeTypeException(type);
+  }
+
+  private void handleResponse(final GeminiResponse<StyledDocument> response) {
+    response
+        .body()
+        .ifPresentOrElse(
+            contentDisplay::setStyledDocument,
+            () -> {
+              final var doc = new BrowserDocument(theme);
+              doc.appendHeadingText(response.status().code() + " - " + response.status().name(), 1);
+              doc.appendText("\n\n" + response.meta() + "\n");
+              contentDisplay.setStyledDocument(doc);
+            });
+    statusBar.setText("Done: " + response.status() + " - " + response.meta());
+  }
+
+  private void handleResponse(final Throwable t) {
+    if (t instanceof CertificateChangedException) {
+      final var cce = (CertificateChangedException) t;
+      handleCertificateChange(cce.host(), cce.newCertificate(), cce.trustedCertificate());
+    } else {
+      final var doc = new BrowserDocument(theme);
+      doc.appendHeadingText("Error", 1);
+      doc.appendText("\n\n" + t.getMessage() + "\n\nStack trace:\n\n");
+      for (final var elem : t.getStackTrace()) {
+        doc.appendText(elem + "\n");
+      }
+      contentDisplay.setStyledDocument(doc);
+      statusBar.setText("Error: " + t.getMessage());
+    }
   }
 
   private void handleCertificateChange(
       final String host, final Certificate newCert, final Certificate trustedCert) {
     statusBar.setText("Certificate mismatch!");
 
-    final StyledDocument doc = new DefaultStyledDocument();
+    final var doc = new BrowserDocument(theme);
 
-    try {
-      doc.insertString(doc.getLength(), "WARNING", theme.h1Style());
-      doc.insertString(doc.getLength(), "\n\n", theme.textStyle());
-      final var text =
-          "Certificate fingerprint mismatch!\n"
-              + "\n"
-              + "This may mean that someone has tampered with your connection, or just that the server has updated its certificate.\n"
-              + "\n"
-              + "Trusted certificate fingerprint: "
-              + Certificates.getFingerprintUnchecked(trustedCert)
-              + "\n"
-              + "New certificate fingerprint: "
-              + Certificates.getFingerprintUnchecked(newCert)
-              + "\n"
-              + "\n"
-              + "If you are absolutely sure that you trust the new certificate, you may replace the old one by clicking the button below.\n"
-              + "\n";
-      doc.insertString(doc.getLength(), text, theme.textStyle());
+    doc.appendHeadingText("WARNING", 1);
+    doc.appendLineBreak();
+    final var text =
+        "\nCertificate fingerprint mismatch!\n"
+            + "\n"
+            + "This may mean that someone has tampered with your connection, or just that the server has updated its certificate.\n"
+            + "\n"
+            + "Trusted certificate fingerprint: "
+            + Certificates.getFingerprintUnchecked(trustedCert)
+            + "\n"
+            + "New certificate fingerprint: "
+            + Certificates.getFingerprintUnchecked(newCert)
+            + "\n"
+            + "\n"
+            + "If you are absolutely sure that you trust the new certificate, you may replace the old one by clicking the button below.\n"
+            + "\n";
+    doc.appendText(text);
 
-      final var trustButton = new JButton("Trust new certificate");
-      trustButton.setCursor(Cursor.getDefaultCursor());
-      trustButton.addActionListener(
-          e -> {
-            try {
-              client.keyStore().setCertificateEntry(host, newCert);
-              navigation.refresh();
-            } catch (final KeyStoreException kse) {
-              statusBar.setText("Error updating key store: " + kse);
-            }
-          });
-      final var buttonAttributes = new SimpleAttributeSet();
-      StyleConstants.setComponent(buttonAttributes, trustButton);
-      doc.insertString(doc.getLength(), "Trust new certificate", buttonAttributes);
-    } catch (final BadLocationException ignored) {
-      // impossible
-    }
+    final var trustButton = new JButton("Trust new certificate");
+    trustButton.setCursor(Cursor.getDefaultCursor());
+    trustButton.addActionListener(
+        e -> {
+          try {
+            client.keyStore().setCertificateEntry(host, newCert);
+            navigation.refresh();
+          } catch (final KeyStoreException kse) {
+            statusBar.setText("Error updating key store: " + kse);
+          }
+        });
+    final var buttonAttributes = new SimpleAttributeSet();
+    StyleConstants.setComponent(buttonAttributes, trustButton);
+    doc.append("Trust new certificate", buttonAttributes);
 
     contentDisplay.setStyledDocument(doc);
   }

@@ -56,7 +56,7 @@ public class GeminiDocumentTest {
                 GeminiHeadingLine.of(3, "Sub-sub-heading"),
                 GeminiTextLine.of(""),
                 GeminiTextLine.of("A great man once said,"),
-                GeminiQuoteLine.of(" Hello, world!"),
+                GeminiQuoteLine.of("Hello, world!"),
                 GeminiTextLine.of("What a profound statement.")));
 
     assertThat(GeminiDocument.parse(document)).isEqualTo(parsed);
@@ -131,8 +131,8 @@ public class GeminiDocumentTest {
                     "This is preformatted text.\n"
                         + "\tAll characters are preserved as-is.\n"
                         + " ```\n"),
-                GeminiTextLine.of(" ```"),
-                GeminiPreformattedText.of("", " Alt text"),
+                GeminiTextLine.of("```"),
+                GeminiPreformattedText.of("", "Alt text"),
                 GeminiPreformattedText.of(""),
                 GeminiPreformattedText.of(
                     "=> gemini://example.com Not a link\n"
@@ -165,8 +165,8 @@ public class GeminiDocumentTest {
             List.of(
                 GeminiHeadingLine.of(1, "Heading 1"),
                 GeminiHeadingLine.of(1, "Heading 2"),
-                GeminiHeadingLine.of(1, "Heading 3 "),
-                GeminiHeadingLine.of(2, "Heading 4 "),
+                GeminiHeadingLine.of(1, "Heading 3"),
+                GeminiHeadingLine.of(2, "Heading 4"),
                 GeminiHeadingLine.of(2, "Heading 5"),
                 GeminiHeadingLine.of(2, "Heading 6"),
                 GeminiHeadingLine.of(3, "Heading 7"),
@@ -181,7 +181,7 @@ public class GeminiDocumentTest {
   public void testParse_withUnorderedListItems_parsesUnorderedListItems() {
     final var document =
         "* One unordered list item\n"
-            + "*  Whitespace is preserved \n"
+            + "*  Whitespace is ignored around the item \n"
             + "*This doesn't count\n"
             + " * Neither does this\n"
             + "\t* Or this\n";
@@ -190,10 +190,10 @@ public class GeminiDocumentTest {
         GeminiDocument.of(
             List.of(
                 GeminiUnorderedListItem.of("One unordered list item"),
-                GeminiUnorderedListItem.of(" Whitespace is preserved "),
+                GeminiUnorderedListItem.of("Whitespace is ignored around the item"),
                 GeminiTextLine.of("*This doesn't count"),
-                GeminiTextLine.of(" * Neither does this"),
-                GeminiTextLine.of("\t* Or this")));
+                GeminiTextLine.of("* Neither does this"),
+                GeminiTextLine.of("* Or this")));
 
     assertThat(GeminiDocument.parse(document)).isEqualTo(parsed);
   }
@@ -209,10 +209,10 @@ public class GeminiDocumentTest {
     final var parsed =
         GeminiDocument.of(
             List.of(
-                GeminiQuoteLine.of(" A quote line"),
+                GeminiQuoteLine.of("A quote line"),
                 GeminiQuoteLine.of("Another quote line"),
-                GeminiTextLine.of(" >Not a quote line"),
-                GeminiTextLine.of(" > No leading spaces allowed")));
+                GeminiTextLine.of(">Not a quote line"),
+                GeminiTextLine.of("> No leading spaces allowed")));
 
     assertThat(GeminiDocument.parse(document)).isEqualTo(parsed);
   }

@@ -5,7 +5,7 @@ import xyz.ianjohnson.gemini.MimeType;
 import xyz.ianjohnson.gemini.client.GeminiResponse.BodySubscriber;
 
 public interface DocumentRenderer {
-  boolean canApply(MimeType mimeType);
+  boolean canRender(MimeType mimeType);
 
   BodySubscriber<StyledDocument> render(MimeType mimeType, BrowserTheme theme);
 }
