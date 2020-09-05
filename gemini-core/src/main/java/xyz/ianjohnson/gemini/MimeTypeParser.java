@@ -21,6 +21,10 @@ final class MimeTypeParser {
       character(';');
       // Not strictly legal, but allowed due to use by others
       whitespace();
+      // We also allow a trailing semicolon
+      if (pos == input.length()) {
+        break;
+      }
 
       final var attribute = token();
       character('=');

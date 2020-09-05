@@ -14,14 +14,16 @@ public class MimeTypeTest {
     assertThat(MimeType.parse("image/png")).isEqualTo(MimeType.of("image", "png"));
     assertThat(MimeType.parse("x-type/x-subtype")).isEqualTo(MimeType.of("x-type", "x-subtype"));
     assertThat(MimeType.parse("Application/JSON")).isEqualTo(MimeType.of("application", "json"));
+    assertThat(MimeType.parse("application/svg+xml"))
+        .isEqualTo(MimeType.of("application", "svg+xml"));
   }
 
   @Test
   public void testParse_withMimeTypeContainingParameters_returnsParsedMimeType()
       throws MimeTypeSyntaxException {
-    assertThat(MimeType.parse("text/plain; charset=utf-8"))
+    assertThat(MimeType.parse("text/plain;charset=utf-8"))
         .isEqualTo(MimeType.of("text", "plain", Map.of("charset", "utf-8")));
-    assertThat(MimeType.parse("text/plain; charset=\"UTF-8\""))
+    assertThat(MimeType.parse("text/plain;charset=\"UTF-8\""))
         .isEqualTo(MimeType.of("text", "plain", Map.of("charset", "UTF-8")));
     assertThat(
             MimeType.parse(
@@ -34,13 +36,21 @@ public class MimeTypeTest {
   }
 
   @Test
+  public void testParse_withMimeTypeNotConformingToRfcButAcceptedAnyways_returnsParsedMimeType()
+      throws MimeTypeSyntaxException {
+    assertThat(MimeType.parse("text/plain; charset=utf-8"))
+        .isEqualTo(MimeType.of("text", "plain", Map.of("charset", "utf-8")));
+    assertThat(MimeType.parse("text/plain;")).isEqualTo(MimeType.of("text", "plain"));
+    assertThat(MimeType.parse("text/plain; charset=utf-8;"))
+        .isEqualTo(MimeType.of("text", "plain", Map.of("charset", "utf-8")));
+  }
+
+  @Test
   public void testParse_withInvalidMimeType_throwsMimeTypeSyntaxException() {
     assertThatThrownBy(() -> MimeType.parse("")).isInstanceOf(MimeTypeSyntaxException.class);
     assertThatThrownBy(() -> MimeType.parse("   ")).isInstanceOf(MimeTypeSyntaxException.class);
     assertThatThrownBy(() -> MimeType.parse("text")).isInstanceOf(MimeTypeSyntaxException.class);
     assertThatThrownBy(() -> MimeType.parse("text / plain"))
-        .isInstanceOf(MimeTypeSyntaxException.class);
-    assertThatThrownBy(() -> MimeType.parse("text/plain;"))
         .isInstanceOf(MimeTypeSyntaxException.class);
     assertThatThrownBy(() -> MimeType.parse("\"text/plain\""))
         .isInstanceOf(MimeTypeSyntaxException.class);
