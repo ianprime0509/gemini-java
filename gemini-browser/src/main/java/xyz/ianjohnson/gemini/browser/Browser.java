@@ -6,11 +6,13 @@ import java.awt.Dimension;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.net.URI;
+import java.security.KeyStore;
 import java.security.KeyStoreException;
-import java.security.cert.Certificate;
+import java.security.cert.X509Certificate;
 import java.util.ServiceLoader;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import javax.net.ssl.SSLHandshakeException;
 import javax.swing.JButton;
 import javax.swing.JFrame;
 import javax.swing.JMenu;
@@ -30,11 +32,14 @@ import xyz.ianjohnson.gemini.client.Certificates;
 import xyz.ianjohnson.gemini.client.GeminiClient;
 import xyz.ianjohnson.gemini.client.GeminiResponse;
 import xyz.ianjohnson.gemini.client.GeminiResponse.BodySubscriber;
+import xyz.ianjohnson.gemini.client.KeyStoreManager;
+import xyz.ianjohnson.gemini.client.TofuClientTrustManager;
 
 public class Browser extends JFrame {
   private static final Logger log = LoggerFactory.getLogger(Browser.class);
 
   private final ExecutorService executorService;
+  private final KeyStoreManager keyStoreManager;
   private final GeminiClient client;
   private final BrowserTheme theme;
 
@@ -44,7 +49,19 @@ public class Browser extends JFrame {
 
   public Browser() {
     executorService = Executors.newCachedThreadPool();
-    client = GeminiClient.newBuilder().executor(executorService).build();
+    final KeyStore keyStore;
+    try {
+      keyStore = KeyStore.getInstance("PKCS12");
+      keyStore.load(null, null);
+    } catch (final Exception e) {
+      throw new IllegalStateException("Failed to construct default KeyStore", e);
+    }
+    keyStoreManager = new KeyStoreManager(keyStore);
+    client =
+        GeminiClient.newBuilder()
+            .executor(executorService)
+            .trustManager(new TofuClientTrustManager(keyStoreManager))
+            .build();
     theme = BrowserTheme.defaultTheme();
 
     setDefaultCloseOperation(DISPOSE_ON_CLOSE);
@@ -140,6 +157,8 @@ public class Browser extends JFrame {
   }
 
   private void handleResponse(final GeminiResponse<StyledDocument> response) {
+    log.info("Received response with status {} and meta {}", response.status(), response.meta());
+
     response
         .body()
         .ifPresentOrElse(
@@ -154,8 +173,10 @@ public class Browser extends JFrame {
   }
 
   private void handleResponse(final Throwable t) {
-    if (t instanceof CertificateChangedException) {
-      final var cce = (CertificateChangedException) t;
+    log.error("Exception while handling response", t);
+
+    if (t instanceof SSLHandshakeException && t.getCause() instanceof CertificateChangedException) {
+      final var cce = (CertificateChangedException) t.getCause();
       handleCertificateChange(cce.host(), cce.newCertificate(), cce.trustedCertificate());
     } else {
       final var doc = new BrowserDocument(theme);
@@ -170,7 +191,7 @@ public class Browser extends JFrame {
   }
 
   private void handleCertificateChange(
-      final String host, final Certificate newCert, final Certificate trustedCert) {
+      final String host, final X509Certificate newCert, final X509Certificate trustedCert) {
     statusBar.setText("Certificate mismatch!");
 
     final var doc = new BrowserDocument(theme);
@@ -197,12 +218,18 @@ public class Browser extends JFrame {
     trustButton.setCursor(Cursor.getDefaultCursor());
     trustButton.addActionListener(
         e -> {
+          final var hostLock = keyStoreManager.certificateLock(host);
+          hostLock.lock();
           try {
-            client.keyStore().setCertificateEntry(host, newCert);
-            navigation.refresh();
+            keyStoreManager.setCertificate(host, newCert);
           } catch (final KeyStoreException kse) {
+            log.error("Error updating key store", kse);
             statusBar.setText("Error updating key store: " + kse);
+            return;
+          } finally {
+            hostLock.unlock();
           }
+          navigation.refresh();
         });
     final var buttonAttributes = new SimpleAttributeSet();
     StyleConstants.setComponent(buttonAttributes, trustButton);

@@ -1,7 +1,7 @@
 package xyz.ianjohnson.gemini.client;
 
-import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 
 /**
  * An exception thrown to indicate that the certificate presented by a host is not the same as the
@@ -15,8 +15,8 @@ import java.security.cert.CertificateException;
  */
 public class CertificateChangedException extends CertificateException {
   private final String host;
-  private final Certificate newCertificate;
-  private final Certificate trustedCertificate;
+  private final X509Certificate newCertificate;
+  private final X509Certificate trustedCertificate;
 
   /**
    * Constructs a new {@link CertificateChangedException}.
@@ -26,7 +26,9 @@ public class CertificateChangedException extends CertificateException {
    * @param trustedCertificate the certificate that the client already trusts for the host
    */
   public CertificateChangedException(
-      final String host, final Certificate newCertificate, final Certificate trustedCertificate) {
+      final String host,
+      final X509Certificate newCertificate,
+      final X509Certificate trustedCertificate) {
     super("Trusted certificate for host " + host + " does not match that presented by server");
     this.host = host;
     this.newCertificate = newCertificate;
@@ -47,7 +49,7 @@ public class CertificateChangedException extends CertificateException {
    *
    * @return the certificate that the host is currently presenting
    */
-  public Certificate newCertificate() {
+  public X509Certificate newCertificate() {
     return newCertificate;
   }
 
@@ -56,7 +58,7 @@ public class CertificateChangedException extends CertificateException {
    *
    * @return the certificate that the client already trusts for the host
    */
-  public Certificate trustedCertificate() {
+  public X509Certificate trustedCertificate() {
     return trustedCertificate;
   }
 }

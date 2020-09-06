@@ -13,18 +13,11 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslHandler;
-import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
-import java.security.KeyStoreException;
-import java.security.cert.Certificate;
-import java.security.cert.CertificateException;
-import java.security.cert.CertificateExpiredException;
-import java.security.cert.CertificateNotYetValidException;
-import java.security.cert.X509Certificate;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -32,8 +25,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import javax.net.ssl.SSLException;
-import javax.net.ssl.SSLPeerUnverifiedException;
-import javax.net.ssl.SSLSession;
+import javax.net.ssl.TrustManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import xyz.ianjohnson.gemini.client.GeminiResponse.BodyHandler;
@@ -42,18 +34,6 @@ import xyz.ianjohnson.gemini.client.GeminiResponse.BodyHandler;
  * A Gemini client.
  *
  * <p>The API of this client closely mirrors that of Java's native HttpClient.
- *
- * <h1>Server certificate validation</h1>
- *
- * <p>As recommended by section 4.2 of the <a
- * href="https://gemini.circumlunar.space/docs/specification.html">Gemini specification</a>, this
- * client implements a simple "TOFU" (trust on first use) model, under which a server's certificate
- * (if valid) is trusted when the host is first visited and stored, and for any further connections
- * the server's certificate is validated against this original certificate (for as long as the
- * original certificate is valid).
- *
- * <p>To store the certificates associated with each host, this class uses a {@link KeyStore}, where
- * the alias of the certificate is the name of the host.
  */
 public final class GeminiClient implements Closeable {
   public static final int GEMINI_PORT = 1965;
@@ -64,7 +44,6 @@ public final class GeminiClient implements Closeable {
   private final boolean userProvidedExecutor;
   private final EventLoopGroup eventLoopGroup;
   private final SslContext sslContext;
-  private final KeyStore keyStore;
 
   private GeminiClient(final Builder builder) {
     if (builder.executor != null) {
@@ -76,24 +55,22 @@ public final class GeminiClient implements Closeable {
     }
     eventLoopGroup = new NioEventLoopGroup(0, executor);
 
-    if (builder.sslContext != null) {
-      sslContext = builder.sslContext;
-    } else {
-      try {
-        sslContext =
-            SslContextBuilder.forClient()
-                // Note: there appears to be a bug in Java 11 that prevents some connections from
-                // working unless we use only TLSv1.2. Java 14 seems to work, but maybe this should
-                // be checked somehow at runtime and configured appropriately.
-                .protocols("TLSv1.2", "TLSv1.3")
-                .trustManager(InsecureTrustManagerFactory.INSTANCE)
-                .build();
-      } catch (final SSLException e) {
-        throw new IllegalStateException("Failed to construct SslContext", e);
-      }
+    final var trustManager =
+        builder.trustManager != null
+            ? builder.trustManager
+            : new TofuClientTrustManager(new KeyStoreManager(createDefaultKeyStore()));
+    try {
+      sslContext =
+          SslContextBuilder.forClient()
+              // Note: there appears to be a bug in Java 11 that prevents some connections from
+              // working unless we use only TLSv1.2. Java 14 seems to work, but maybe this should
+              // be checked somehow at runtime and configured appropriately.
+              .protocols("TLSv1.2", "TLSv1.3")
+              .trustManager(trustManager)
+              .build();
+    } catch (final SSLException e) {
+      throw new IllegalStateException("Failed to construct SslContext", e);
     }
-
-    keyStore = builder.keyStore != null ? builder.keyStore : createDefaultKeyStore();
   }
 
   /**
@@ -268,13 +245,6 @@ public final class GeminiClient implements Closeable {
                           return;
                         }
 
-                        try {
-                          validatePeerCertificate(sslHandler.engine().getSession());
-                        } catch (final CertificateException e) {
-                          future.completeExceptionally(e);
-                          return;
-                        }
-
                         channel
                             .writeAndFlush(
                                 wrappedBuffer((uri + "\r\n").getBytes(StandardCharsets.UTF_8)))
@@ -299,88 +269,10 @@ public final class GeminiClient implements Closeable {
     return userProvidedExecutor ? Optional.of(executor) : Optional.empty();
   }
 
-  /**
-   * Returns the {@link SslContext} used by this client.
-   *
-   * @return the {@link SslContext} used by this client
-   */
-  public SslContext sslContext() {
-    return sslContext;
-  }
-
-  /**
-   * Returns the {@link KeyStore} used by this client.
-   *
-   * @return the {@link KeyStore} used by this client
-   */
-  public KeyStore keyStore() {
-    return keyStore;
-  }
-
-  private void validatePeerCertificate(final SSLSession session) throws CertificateException {
-    final var host = session.getPeerHost();
-    final Certificate[] peerCerts;
-    try {
-      peerCerts = session.getPeerCertificates();
-    } catch (final SSLPeerUnverifiedException e) {
-      throw new CertificateException("Could not verify peer", e);
-    }
-    if (peerCerts.length == 0 || !(peerCerts[0] instanceof X509Certificate)) {
-      throw new CertificateException("No valid certificate supplied by peer");
-    }
-    final var peerCert = (X509Certificate) peerCerts[0];
-    peerCert.checkValidity();
-
-    final X509Certificate knownCert;
-    try {
-      final var tmp = keyStore.getCertificate(host);
-      if (tmp != null && !(tmp instanceof X509Certificate)) {
-        throw new CertificateException("Known certificate is not an X509Certificate");
-      }
-      knownCert = (X509Certificate) tmp;
-    } catch (final KeyStoreException e) {
-      throw new CertificateException(
-          "Could not look for existing known certificate in key store", e);
-    }
-    var knownCertValid = knownCert != null;
-    try {
-      if (knownCertValid) {
-        knownCert.checkValidity();
-      }
-    } catch (final CertificateNotYetValidException e) {
-      log.warn(
-          "Known certificate for host {} ({}) is somehow not yet valid",
-          host,
-          Certificates.getFingerprint(knownCert));
-      knownCertValid = false;
-    } catch (final CertificateExpiredException e) {
-      log.info(
-          "Known certificate for host {} ({}) is expired",
-          host,
-          Certificates.getFingerprint(knownCert));
-      knownCertValid = false;
-    }
-
-    if (!knownCertValid) {
-      log.info(
-          "Trusting new certificate for host {} with fingerprint {}",
-          host,
-          Certificates.getFingerprint(peerCert));
-      try {
-        keyStore.setCertificateEntry(host, peerCert);
-      } catch (final KeyStoreException e) {
-        throw new CertificateException("Could not store certificate for new host in key store", e);
-      }
-    } else if (!knownCert.equals(peerCert)) {
-      throw new CertificateChangedException(host, peerCert, knownCert);
-    }
-  }
-
   /** A builder for {@link GeminiClient GeminiClients}. */
   public static final class Builder {
     private Executor executor;
-    private SslContext sslContext;
-    private KeyStore keyStore;
+    private TrustManager trustManager;
 
     private Builder() {}
 
@@ -399,30 +291,20 @@ public final class GeminiClient implements Closeable {
     }
 
     /**
-     * Sets the {@link SslContext} to use for the client.
+     * Sets the {@link TrustManager} to use for evaluating trust decisions.
      *
-     * <p>If no {@link SslContext} is explicitly provided using this method, the client will create
-     * a default context supporting TLS 1.2 and 1.3.
+     * <p>If no trust manager is explicitly provided using this method, the client will use a {@link
+     * TofuClientTrustManager} with an internal key store that is not persisted beyond the life of
+     * the client. Hence, unless the same client instance is meant to be used for an extended period
+     * of time, it is highly recommended to configure a {@link TofuClientTrustManager} backed by a
+     * key store that is already loaded with previously trusted certificates and can be saved after
+     * the client shuts down to persist any new certificates.
      *
-     * @param sslContext the {@link SslContext} to use for the client
+     * @param trustManager the {@link TrustManager} to use for evaluating trust decisions
      * @return {@code this}
      */
-    public Builder sslContext(final SslContext sslContext) {
-      this.sslContext = requireNonNull(sslContext, "sslContext");
-      return this;
-    }
-
-    /**
-     * Sets the {@link KeyStore} in which to store trusted server certificates.
-     *
-     * <p>If no key store is explicitly provided using this method, the client will create a new key
-     * store.
-     *
-     * @param keyStore the {@link KeyStore} in which to store trusted server certificates
-     * @return {@code this}
-     */
-    public Builder keyStore(final KeyStore keyStore) {
-      this.keyStore = requireNonNull(keyStore, "keyStore");
+    public Builder trustManager(final TrustManager trustManager) {
+      this.trustManager = requireNonNull(trustManager, "trustManager");
       return this;
     }
 
