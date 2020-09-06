@@ -30,6 +30,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLPeerUnverifiedException;
 import javax.net.ssl.SSLSession;
@@ -55,8 +56,8 @@ import xyz.ianjohnson.gemini.client.GeminiResponse.BodyHandler;
  * the alias of the certificate is the name of the host.
  */
 public final class GeminiClient implements Closeable {
+  public static final int GEMINI_PORT = 1965;
   static final String GEMINI_SCHEME = "gemini";
-  static final int GEMINI_PORT = 1965;
   private static final Logger log = LoggerFactory.getLogger(GeminiClient.class);
 
   private final Executor executor;
@@ -134,6 +135,10 @@ public final class GeminiClient implements Closeable {
    * Sends a request for the given URI, blocking if necessary until the response is ready or the
    * request is interrupted.
    *
+   * <p>This is a shortcut for {@link #send(String, int, URI, BodyHandler)} in the most common case,
+   * where the URI being requested is hosted on the server to which the request is sent (that is, no
+   * proxying is requested).
+   *
    * @param uri the URI to request. The request is sent to the host and port specified in the URI.
    * @param responseBodyHandler the response body handler
    * @param <T> the type of the decoded response body
@@ -143,11 +148,34 @@ public final class GeminiClient implements Closeable {
    */
   public <T> GeminiResponse<T> send(final URI uri, final BodyHandler<T> responseBodyHandler)
       throws IOException, InterruptedException {
-    final var respFuture = sendAsync(uri, responseBodyHandler);
+    return getResponse(sendAsync(uri, responseBodyHandler));
+  }
+
+  /**
+   * Sends a request for the given URI, blocking if necessary until the response is ready or the
+   * request is interrupted.
+   *
+   * @param host the host of the server to which to send the request
+   * @param port the the port of the server to which to send the request
+   * @param uri the URI to request
+   * @param responseBodyHandler the response body handler
+   * @param <T> the type of the decoded response body
+   * @return a {@link GeminiResponse} containing the response details
+   * @throws IOException if an I/O-related exception occurs while executing the request
+   * @throws InterruptedException if the request is interrupted before it completes
+   */
+  public <T> GeminiResponse<T> send(
+      final String host, final int port, final URI uri, final BodyHandler<T> responseBodyHandler)
+      throws IOException, InterruptedException {
+    return getResponse(sendAsync(host, port, uri, responseBodyHandler));
+  }
+
+  private <T> GeminiResponse<T> getResponse(final Future<GeminiResponse<T>> future)
+      throws IOException, InterruptedException {
     try {
-      return respFuture.get();
+      return future.get();
     } catch (final InterruptedException e) {
-      respFuture.cancel(true);
+      future.cancel(true);
       throw e;
     } catch (final ExecutionException e) {
       final var t = e.getCause();
@@ -165,6 +193,10 @@ public final class GeminiClient implements Closeable {
   /**
    * Sends an asynchronous request for the given URI.
    *
+   * <p>This is a shortcut for {@link #sendAsync(String, int, URI, BodyHandler)} in the most common
+   * case, where the URI being requested is hosted on the server to which the request is sent (that
+   * is, no proxying is requested).
+   *
    * @param uri the URI to request. The request is sent to the host and port specified in the URI.
    * @param responseBodyHandler the response body handler
    * @param <T> the type of the decoded response body
@@ -180,7 +212,24 @@ public final class GeminiClient implements Closeable {
       throw new IllegalArgumentException("URI missing host");
     }
     final var port = uri.getPort() != -1 ? uri.getPort() : GEMINI_PORT;
-    log.debug("Connecting to host {} on port {}", uri.getHost(), port);
+
+    return sendAsync(uri.getHost(), port, uri, responseBodyHandler);
+  }
+
+  /**
+   * Sends an asynchronous request for the given URI.
+   *
+   * @param host the host of the server to which to send the request
+   * @param port the the port of the server to which to send the request
+   * @param uri the URI to request
+   * @param responseBodyHandler the response body handler
+   * @param <T> the type of the decoded response body
+   * @return a {@link CompletableFuture} that will eventually complete with the received response
+   *     details or an error encountered while handling the request
+   */
+  public <T> CompletableFuture<GeminiResponse<T>> sendAsync(
+      final String host, final int port, final URI uri, final BodyHandler<T> responseBodyHandler) {
+    log.debug("Connecting to host {} on port {}", host, port);
 
     final CompletableFuture<GeminiResponse<T>> future = new FutureImpl<>();
     final var bootstrap =
