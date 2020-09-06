@@ -1,13 +1,21 @@
 package xyz.ianjohnson.gemini.browser;
 
+import dev.dirs.ProjectDirectories;
 import java.awt.BorderLayout;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.ServiceLoader;
 import java.util.concurrent.ExecutorService;
@@ -36,6 +44,11 @@ import xyz.ianjohnson.gemini.client.KeyStoreManager;
 import xyz.ianjohnson.gemini.client.TofuClientTrustManager;
 
 public class Browser extends JFrame {
+  private static final ProjectDirectories PROJECT_DIRECTORIES =
+      ProjectDirectories.from("xyz", "Ian Johnson", "Gemini Browser");
+  private static final Path KEY_STORE_PATH =
+      Paths.get(PROJECT_DIRECTORIES.dataDir).resolve("keystore.p12");
+  private static final String KEY_STORE_PASSWORD = "password";
   private static final Logger log = LoggerFactory.getLogger(Browser.class);
 
   private final ExecutorService executorService;
@@ -49,14 +62,7 @@ public class Browser extends JFrame {
 
   public Browser() {
     executorService = Executors.newCachedThreadPool();
-    final KeyStore keyStore;
-    try {
-      keyStore = KeyStore.getInstance("PKCS12");
-      keyStore.load(null, null);
-    } catch (final Exception e) {
-      throw new IllegalStateException("Failed to construct default KeyStore", e);
-    }
-    keyStoreManager = new KeyStoreManager(keyStore);
+    keyStoreManager = new KeyStoreManager(loadKeyStore());
     client =
         GeminiClient.newBuilder()
             .executor(executorService)
@@ -73,6 +79,7 @@ public class Browser extends JFrame {
           public void windowClosed(final WindowEvent e) {
             client.close();
             executorService.shutdownNow();
+            saveKeyStore(keyStoreManager.keyStore());
           }
         });
 
@@ -127,6 +134,53 @@ public class Browser extends JFrame {
       log.error("Failed to set Nimbus look and feel; using default", e);
     }
     SwingUtilities.invokeLater(() -> new Browser().setVisible(true));
+  }
+
+  /** Attempts to load the user's key store or create a new one if it doesn't exist. */
+  private static KeyStore loadKeyStore() {
+    final KeyStore keyStore;
+    try {
+      keyStore = KeyStore.getInstance("PKCS12");
+    } catch (final KeyStoreException e) {
+      throw new IllegalStateException("Could not get key store instance", e);
+    }
+    if (Files.exists(KEY_STORE_PATH)) {
+      log.info("Attempting to read existing key store {}", KEY_STORE_PATH);
+      try (final var is = Files.newInputStream(KEY_STORE_PATH)) {
+        keyStore.load(is, KEY_STORE_PASSWORD.toCharArray());
+      } catch (final IOException e) {
+        throw new UncheckedIOException("Could not read from key store", e);
+      } catch (final NoSuchAlgorithmException | CertificateException e) {
+        throw new IllegalStateException("Could not load key store", e);
+      }
+      log.info("Loaded key store from {}", KEY_STORE_PATH);
+    } else {
+      log.warn("No existing key store found; creating a new one");
+      try {
+        keyStore.load(null, null);
+      } catch (final IOException | NoSuchAlgorithmException | CertificateException e) {
+        throw new IllegalStateException("Could not initialize new key store", e);
+      }
+      log.info("Created new key store");
+    }
+    return keyStore;
+  }
+
+  /** Attempts to save the given key store to the user's key store path. */
+  private static void saveKeyStore(final KeyStore keyStore) {
+    try {
+      Files.createDirectories(KEY_STORE_PATH.getParent());
+    } catch (final IOException e) {
+      throw new IllegalStateException("Could not create parent directories for key store file", e);
+    }
+    try (final var os = Files.newOutputStream(KEY_STORE_PATH)) {
+      keyStore.store(os, KEY_STORE_PASSWORD.toCharArray());
+    } catch (final IOException e) {
+      throw new UncheckedIOException("Could not save key store", e);
+    } catch (final KeyStoreException | NoSuchAlgorithmException | CertificateException e) {
+      throw new IllegalStateException("Could not save key store", e);
+    }
+    log.info("Saved key store to {}", KEY_STORE_PATH);
   }
 
   private void load(final URI uri) {
