@@ -38,6 +38,7 @@ public class TofuClientTrustManager extends X509ExtendedTrustManager {
    * Throws {@link UnsupportedOperationException}, as this {@link javax.net.ssl.TrustManager
    * TrustManager} is for use by clients only.
    */
+  @Override
   public void checkClientTrusted(
       final X509Certificate[] chain, final String authType, final Socket socket) {
     throw new UnsupportedOperationException();
@@ -57,6 +58,7 @@ public class TofuClientTrustManager extends X509ExtendedTrustManager {
    * Throws {@link UnsupportedOperationException}, as this {@link javax.net.ssl.TrustManager
    * TrustManager} is for use by clients only.
    */
+  @Override
   public void checkClientTrusted(
       final X509Certificate[] chain, final String authType, final SSLEngine engine) {
     throw new UnsupportedOperationException();
@@ -73,6 +75,7 @@ public class TofuClientTrustManager extends X509ExtendedTrustManager {
    * Throws {@link UnsupportedOperationException}, as this {@link javax.net.ssl.TrustManager
    * TrustManager} is for use by clients only.
    */
+  @Override
   public void checkClientTrusted(final X509Certificate[] chain, final String authType) {
     throw new UnsupportedOperationException();
   }
@@ -81,6 +84,7 @@ public class TofuClientTrustManager extends X509ExtendedTrustManager {
    * Throws {@link UnsupportedOperationException}, as this {@link javax.net.ssl.TrustManager
    * TrustManager} requires the server host to be known to validate the certificate.
    */
+  @Override
   public void checkServerTrusted(final X509Certificate[] chain, final String authType) {
     throw new UnsupportedOperationException("Server host must be known");
   }
@@ -90,6 +94,7 @@ public class TofuClientTrustManager extends X509ExtendedTrustManager {
    *
    * @return an empty array of certificates
    */
+  @Override
   public X509Certificate[] getAcceptedIssuers() {
     return new X509Certificate[0];
   }
