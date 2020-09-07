@@ -12,7 +12,6 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
-import io.netty.handler.ssl.SslHandler;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.URI;
@@ -255,25 +254,13 @@ public final class GeminiClient implements Closeable {
               final var channel = channelFuture.channel();
               future.whenComplete((response, e) -> channel.close());
 
-              final var sslHandler = (SslHandler) channel.pipeline().get("ssl");
-              sslHandler
-                  .handshakeFuture()
+              channel
+                  .writeAndFlush(wrappedBuffer((uri + "\r\n").getBytes(StandardCharsets.UTF_8)))
                   .addListener(
-                      handshakeFuture -> {
-                        if (!handshakeFuture.isSuccess()) {
-                          future.completeExceptionally(handshakeFuture.cause());
-                          return;
+                      writeFuture -> {
+                        if (!writeFuture.isSuccess()) {
+                          future.completeExceptionally(writeFuture.cause());
                         }
-
-                        channel
-                            .writeAndFlush(
-                                wrappedBuffer((uri + "\r\n").getBytes(StandardCharsets.UTF_8)))
-                            .addListener(
-                                writeFuture -> {
-                                  if (!writeFuture.isSuccess()) {
-                                    future.completeExceptionally(writeFuture.cause());
-                                  }
-                                });
                       });
             });
 
