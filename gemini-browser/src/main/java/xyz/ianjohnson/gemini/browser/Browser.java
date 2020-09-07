@@ -10,13 +10,9 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.security.KeyStore;
 import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
-import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.ServiceLoader;
 import java.util.concurrent.ExecutorService;
@@ -51,11 +47,16 @@ public class Browser extends JFrame {
       ProjectDirectories.from("xyz", "Ian Johnson", "Gemini Browser");
   private static final Path KEY_STORE_PATH =
       Paths.get(PROJECT_DIRECTORIES.dataDir).resolve("keystore.p12");
+  // I'd rather have no password at all, but that didn't work when I was experimenting with it, so
+  // here's a worthless constant password
   private static final String KEY_STORE_PASSWORD = "password";
   private static final Logger log = LoggerFactory.getLogger(Browser.class);
 
   private final ExecutorService executorService;
+  private final UserKeyStoreManager userKeyStoreManager =
+      new UserKeyStoreManager(KEY_STORE_PATH, KEY_STORE_PASSWORD);
   private final KeyStoreManager keyStoreManager;
+  private final TofuClientTrustManager trustManager;
   private final GeminiClient client;
   private final BrowserTheme theme;
 
@@ -65,12 +66,13 @@ public class Browser extends JFrame {
 
   public Browser() {
     executorService = Executors.newCachedThreadPool();
-    keyStoreManager = new KeyStoreManager(loadKeyStore());
-    client =
-        GeminiClient.newBuilder()
-            .executor(executorService)
-            .trustManager(new TofuClientTrustManager(keyStoreManager))
-            .build();
+    try {
+      keyStoreManager = userKeyStoreManager.loadIfPresent();
+    } catch (final IOException e) {
+      throw new UncheckedIOException(e);
+    }
+    trustManager = new TofuClientTrustManager(keyStoreManager);
+    client = GeminiClient.newBuilder().executor(executorService).trustManager(trustManager).build();
     theme = BrowserTheme.defaultTheme();
 
     setDefaultCloseOperation(DISPOSE_ON_CLOSE);
@@ -82,7 +84,11 @@ public class Browser extends JFrame {
           public void windowClosed(final WindowEvent e) {
             client.close();
             executorService.shutdownNow();
-            saveKeyStore(keyStoreManager.keyStore());
+            try {
+              userKeyStoreManager.store(keyStoreManager);
+            } catch (final IOException ex) {
+              log.error("Error saving user key store", ex);
+            }
           }
         });
 
@@ -121,53 +127,6 @@ public class Browser extends JFrame {
       log.error("Failed to set Nimbus look and feel; using default", e);
     }
     SwingUtilities.invokeLater(() -> new Browser().setVisible(true));
-  }
-
-  /** Attempts to load the user's key store or create a new one if it doesn't exist. */
-  private static KeyStore loadKeyStore() {
-    final KeyStore keyStore;
-    try {
-      keyStore = KeyStore.getInstance("PKCS12");
-    } catch (final KeyStoreException e) {
-      throw new IllegalStateException("Could not get key store instance", e);
-    }
-    if (Files.exists(KEY_STORE_PATH)) {
-      log.info("Attempting to read existing key store {}", KEY_STORE_PATH);
-      try (final var is = Files.newInputStream(KEY_STORE_PATH)) {
-        keyStore.load(is, KEY_STORE_PASSWORD.toCharArray());
-      } catch (final IOException e) {
-        throw new UncheckedIOException("Could not read from key store", e);
-      } catch (final NoSuchAlgorithmException | CertificateException e) {
-        throw new IllegalStateException("Could not load key store", e);
-      }
-      log.info("Loaded key store from {}", KEY_STORE_PATH);
-    } else {
-      log.warn("No existing key store found; creating a new one");
-      try {
-        keyStore.load(null, null);
-      } catch (final IOException | NoSuchAlgorithmException | CertificateException e) {
-        throw new IllegalStateException("Could not initialize new key store", e);
-      }
-      log.info("Created new key store");
-    }
-    return keyStore;
-  }
-
-  /** Attempts to save the given key store to the user's key store path. */
-  private static void saveKeyStore(final KeyStore keyStore) {
-    try {
-      Files.createDirectories(KEY_STORE_PATH.getParent());
-    } catch (final IOException e) {
-      throw new IllegalStateException("Could not create parent directories for key store file", e);
-    }
-    try (final var os = Files.newOutputStream(KEY_STORE_PATH)) {
-      keyStore.store(os, KEY_STORE_PASSWORD.toCharArray());
-    } catch (final IOException e) {
-      throw new UncheckedIOException("Could not save key store", e);
-    } catch (final KeyStoreException | NoSuchAlgorithmException | CertificateException e) {
-      throw new IllegalStateException("Could not save key store", e);
-    }
-    log.info("Saved key store to {}", KEY_STORE_PATH);
   }
 
   private void handleHyperlinkUpdate(final HyperlinkEvent e) {
@@ -287,8 +246,8 @@ public class Browser extends JFrame {
     trustButton.setCursor(Cursor.getDefaultCursor());
     trustButton.addActionListener(
         e -> {
-          final var hostLock = keyStoreManager.certificateLock(host);
-          hostLock.lock();
+          final var lock = trustManager.hostLock(host);
+          lock.lock();
           try {
             keyStoreManager.setCertificate(host, newCert);
           } catch (final KeyStoreException kse) {
@@ -296,7 +255,7 @@ public class Browser extends JFrame {
             statusBar.setText("Error updating key store: " + kse);
             return;
           } finally {
-            hostLock.unlock();
+            lock.unlock();
           }
           navigation.refresh();
         });

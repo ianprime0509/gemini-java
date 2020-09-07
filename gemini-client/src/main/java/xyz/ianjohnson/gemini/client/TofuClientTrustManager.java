@@ -8,6 +8,10 @@ import java.security.cert.CertificateException;
 import java.security.cert.CertificateExpiredException;
 import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.X509Certificate;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.X509ExtendedTrustManager;
@@ -29,9 +33,38 @@ public class TofuClientTrustManager extends X509ExtendedTrustManager {
   private static final Logger log = LoggerFactory.getLogger(TofuClientTrustManager.class);
 
   private final CertificateManager certificateManager;
+  private final ConcurrentMap<String, Lock> hostLocks = new ConcurrentHashMap<>();
 
   public TofuClientTrustManager(final CertificateManager certificateManager) {
     this.certificateManager = requireNonNull(certificateManager, "certificateManager");
+  }
+
+  /**
+   * Given a host, returns a {@link Lock} to control access to the certificates for the given host.
+   * Handshakes with a host will hold the corresponding lock for the entire duration of the trust
+   * decision process. Users who update the underlying certificates directly should also use this
+   * lock to prevent any race conditions with trust decisions.
+   *
+   * <p>The requirement of holding a lock on a per-host basis is to prevent the scenario where two
+   * threads make a connection to a previously unknown host within a very short time interval.
+   * Without a per-host lock, both connections may simultaneously attempt to get the existing host
+   * certificate, find that there is none, and proceed to set the host certificate. However, the
+   * certificate that the second connection stores may not be the same as that stored by the first
+   * connection, for example if an attacker intercepted the second connection. In this scenario,
+   * then, the second certificate would overwrite the first one with no notice to the user.
+   *
+   * <p>Using a per-host lock allows this class to hold the lock across both the read and the write
+   * operations: in the preceding example, the first connection would acquire the lock, get the
+   * (nonexistent) host certificate and set the new host certificate, while the second connection
+   * would have to wait until the first connection finishes updating the host certificate. Hence,
+   * the second connection would fail, as it would see the mismatched host certificate set by the
+   * first connection.
+   *
+   * @param host the host whose lock to return
+   * @return a {@link Lock} to control access to trust decisions for the given host
+   */
+  public Lock hostLock(final String host) {
+    return hostLocks.computeIfAbsent(host, h -> new ReentrantLock());
   }
 
   /**
@@ -107,7 +140,7 @@ public class TofuClientTrustManager extends X509ExtendedTrustManager {
     final var peerCert = chain[0];
     peerCert.checkValidity();
 
-    final var hostLock = certificateManager.certificateLock(host);
+    final var hostLock = hostLocks.computeIfAbsent(host, h -> new ReentrantLock());
     hostLock.lock();
     try {
       final X509Certificate knownCert;
