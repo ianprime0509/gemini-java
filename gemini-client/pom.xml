@@ -49,6 +49,12 @@
       <scope>test</scope>
     </dependency>
     <dependency>
+      <!-- We need to generate certificates for some tests -->
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcpkix-jdk15on</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
       <scope>test</scope>

@@ -140,7 +140,7 @@ public class TofuClientTrustManager extends X509ExtendedTrustManager {
     final var peerCert = chain[0];
     peerCert.checkValidity();
 
-    final var hostLock = hostLocks.computeIfAbsent(host, h -> new ReentrantLock());
+    final var hostLock = hostLock(host);
     hostLock.lock();
     try {
       final X509Certificate knownCert;
