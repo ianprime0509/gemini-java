@@ -11,6 +11,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow;
 import java.util.concurrent.SubmissionPublisher;
 import xyz.ianjohnson.gemini.GeminiStatus;
+import xyz.ianjohnson.gemini.GeminiStatus.Kind;
 import xyz.ianjohnson.gemini.MimeType;
 import xyz.ianjohnson.gemini.MimeTypeSyntaxException;
 import xyz.ianjohnson.gemini.client.GeminiResponse.BodyHandler;
@@ -141,7 +142,7 @@ final class GeminiResponseHandler<T> extends ChannelInboundHandlerAdapter {
       final ChannelHandlerContext ctx, final GeminiStatus status, final String meta)
       throws MalformedResponseException {
     final var responseBuilder = GeminiResponse.<T>newBuilder().uri(uri).status(status).meta(meta);
-    if (status != GeminiStatus.SUCCESS) {
+    if (status.kind() != Kind.SUCCESS) {
       future.complete(responseBuilder.build());
       ctx.close();
       return;

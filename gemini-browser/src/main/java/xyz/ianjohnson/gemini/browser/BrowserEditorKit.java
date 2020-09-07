@@ -159,7 +159,7 @@ public class BrowserEditorKit extends StyledEditorKit {
       String desc = null;
       try {
         url = uri.toURL();
-      } catch (final MalformedURLException e) {
+      } catch (final IllegalArgumentException | MalformedURLException e) {
         url = null;
         desc = uri.toString();
       }

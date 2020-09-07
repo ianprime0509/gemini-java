@@ -14,8 +14,9 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import xyz.ianjohnson.gemini.GeminiStatus;
+import xyz.ianjohnson.gemini.GeminiStatus.Kind;
 import xyz.ianjohnson.gemini.MimeTypeSyntaxException;
+import xyz.ianjohnson.gemini.StandardGeminiStatus;
 import xyz.ianjohnson.gemini.client.GeminiResponse.BodyHandlers;
 
 public class GeminiResponseHandlerTest {
@@ -51,7 +52,7 @@ public class GeminiResponseHandlerTest {
         .satisfies(
             response -> {
               assertThat(response.uri()).isEqualTo(TEST_URI);
-              assertThat(response.status()).isEqualTo(GeminiStatus.SUCCESS);
+              assertThat(response.status()).isEqualTo(StandardGeminiStatus.SUCCESS);
               assertThat(response.meta()).isEqualTo("text/plain");
               assertThat(response.body())
                   .hasValueSatisfying(
@@ -73,7 +74,7 @@ public class GeminiResponseHandlerTest {
         .satisfies(
             response -> {
               assertThat(response.uri()).isEqualTo(TEST_URI);
-              assertThat(response.status()).isEqualTo(GeminiStatus.SUCCESS);
+              assertThat(response.status()).isEqualTo(StandardGeminiStatus.SUCCESS);
               assertThat(response.meta()).isEqualTo("text/plain;charset=utf-8");
               final var expectedBody = utf8("Line of text\n".repeat(10000));
               assertThat(response.body())
@@ -103,7 +104,7 @@ public class GeminiResponseHandlerTest {
         .satisfies(
             response -> {
               assertThat(response.uri()).isEqualTo(TEST_URI);
-              assertThat(response.status()).isEqualTo(GeminiStatus.SUCCESS);
+              assertThat(response.status()).isEqualTo(StandardGeminiStatus.SUCCESS);
               assertThat(response.meta()).isEqualTo("application/octet-stream");
               assertThat(response.body())
                   .hasValueSatisfying(body -> assertThat(body).containsExactly(responseBody));
@@ -125,7 +126,7 @@ public class GeminiResponseHandlerTest {
         .satisfies(
             response -> {
               assertThat(response.uri()).isEqualTo(TEST_URI);
-              assertThat(response.status()).isEqualTo(GeminiStatus.SUCCESS);
+              assertThat(response.status()).isEqualTo(StandardGeminiStatus.SUCCESS);
               assertThat(response.meta()).isEqualTo("text/plain");
               assertThat(response.body()).isEmpty();
             });
@@ -141,7 +142,7 @@ public class GeminiResponseHandlerTest {
         .satisfies(
             response -> {
               assertThat(response.uri()).isEqualTo(TEST_URI);
-              assertThat(response.status()).isEqualTo(GeminiStatus.NOT_FOUND);
+              assertThat(response.status()).isEqualTo(StandardGeminiStatus.NOT_FOUND);
               assertThat(response.meta()).isEqualTo("Not found");
               assertThat(response.body()).isEmpty();
             });
@@ -180,7 +181,7 @@ public class GeminiResponseHandlerTest {
         .satisfies(
             response -> {
               assertThat(response.uri()).isEqualTo(TEST_URI);
-              assertThat(response.status()).isEqualTo(GeminiStatus.PERMANENT_FAILURE);
+              assertThat(response.status()).isEqualTo(StandardGeminiStatus.PERMANENT_FAILURE);
               assertThat(response.meta()).isEqualTo("");
               assertThat(response.body()).isEmpty();
             });
@@ -197,7 +198,7 @@ public class GeminiResponseHandlerTest {
         .satisfies(
             response -> {
               assertThat(response.uri()).isEqualTo(TEST_URI);
-              assertThat(response.status()).isEqualTo(GeminiStatus.PERMANENT_FAILURE);
+              assertThat(response.status()).isEqualTo(StandardGeminiStatus.PERMANENT_FAILURE);
               assertThat(response.meta()).isEqualTo("");
               assertThat(response.body()).isEmpty();
             });
@@ -214,7 +215,8 @@ public class GeminiResponseHandlerTest {
         .satisfies(
             response -> {
               assertThat(response.uri()).isEqualTo(TEST_URI);
-              assertThat(response.status()).isEqualTo(GeminiStatus.CLIENT_CERTIFICATE_REQUIRED);
+              assertThat(response.status())
+                  .isEqualTo(StandardGeminiStatus.CLIENT_CERTIFICATE_REQUIRED);
               assertThat(response.meta()).isEqualTo("   ===NO===   ");
               assertThat(response.body()).isEmpty();
             });
@@ -230,7 +232,7 @@ public class GeminiResponseHandlerTest {
         .satisfies(
             response -> {
               assertThat(response.uri()).isEqualTo(TEST_URI);
-              assertThat(response.status()).isEqualTo(GeminiStatus.NOT_FOUND);
+              assertThat(response.status()).isEqualTo(StandardGeminiStatus.NOT_FOUND);
               assertThat(response.meta()).isEqualTo("エラー Document non trouvé");
               assertThat(response.body()).isEmpty();
             });
@@ -257,7 +259,7 @@ public class GeminiResponseHandlerTest {
         .satisfies(
             response -> {
               assertThat(response.uri()).isEqualTo(TEST_URI);
-              assertThat(response.status()).isEqualTo(GeminiStatus.TEMPORARY_FAILURE);
+              assertThat(response.status()).isEqualTo(StandardGeminiStatus.TEMPORARY_FAILURE);
               assertThat(response.meta()).isEqualTo("A".repeat(1024));
               assertThat(response.body()).isEmpty();
             });
@@ -275,7 +277,7 @@ public class GeminiResponseHandlerTest {
   }
 
   @Test
-  public void testHandler_withUnknownResponseStatus_throwsUnknownStatusCodeException() {
+  public void testHandler_withUnknownResponseStatusKind_throwsUnknownStatusCodeException() {
     channel.writeInbound(wrappedBuffer(utf8("99 Invalid\r\n")));
     channel.finish();
     channel.checkException();
@@ -284,6 +286,23 @@ public class GeminiResponseHandlerTest {
         .isInstanceOfSatisfying(
             UnknownStatusCodeException.class, e -> assertThat(e.code()).isEqualTo(99))
         .hasMessageContaining("Unknown response status code: 99");
+  }
+
+  @Test
+  public void testHandler_withNonStandardStatusCode_returnsResponse() throws Throwable {
+    channel.writeInbound(wrappedBuffer(utf8("49 Temporary failure\r\n")));
+    channel.finish();
+    channel.checkException();
+
+    assertThat(getResponse())
+        .satisfies(
+            response -> {
+              assertThat(response.uri()).isEqualTo(TEST_URI);
+              assertThat(response.status().kind()).isEqualTo(Kind.TEMPORARY_FAILURE);
+              assertThat(response.status().code()).isEqualTo(49);
+              assertThat(response.meta()).isEqualTo("Temporary failure");
+              assertThat(response.body()).isEmpty();
+            });
   }
 
   @Test
@@ -332,7 +351,7 @@ public class GeminiResponseHandlerTest {
         .satisfies(
             response -> {
               assertThat(response.uri()).isEqualTo(TEST_URI);
-              assertThat(response.status()).isEqualTo(GeminiStatus.SUCCESS);
+              assertThat(response.status()).isEqualTo(StandardGeminiStatus.SUCCESS);
               assertThat(response.meta()).isEqualTo("text/plain;charset=utf-8");
               assertThat(response.body())
                   .hasValueSatisfying(

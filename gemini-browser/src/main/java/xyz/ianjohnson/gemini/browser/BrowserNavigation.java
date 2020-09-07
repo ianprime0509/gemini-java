@@ -62,6 +62,15 @@ public class BrowserNavigation extends JPanel {
     goButton.addActionListener(e -> navigate());
   }
 
+  /**
+   * Sets the {@link URI} of the current page. This is useful in updating the navigation URI after
+   * following redirects.
+   */
+  public void setCurrentUri(final URI uri) {
+    currentUri = uri;
+    uriInput.setText(uri.toString());
+  }
+
   /** Navigates to the given URI, updating the history accordingly. */
   public void navigate(final URI uri) {
     navigate(uri, true);
@@ -160,15 +169,14 @@ public class BrowserNavigation extends JPanel {
       forwardHistory.clear();
     }
 
-    currentUri = currentUri.resolve(uri);
-    uriInput.setText(currentUri.toString());
+    setCurrentUri(currentUri.resolve(uri));
     updateNavigationEnabledState();
 
     fireNavigated(currentUri);
   }
 
   protected void fireNavigated(final URI uri) {
-    final NavigationEvent e = new NavigationEvent(this, uri);
+    final var e = new NavigationEvent(this, uri);
     for (final var listener : listenerList.getListeners(NavigationListener.class)) {
       listener.navigated(e);
     }

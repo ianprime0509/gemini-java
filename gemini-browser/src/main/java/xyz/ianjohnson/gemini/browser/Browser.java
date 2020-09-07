@@ -187,13 +187,14 @@ public class Browser extends JFrame {
   private void handleResponse(final GeminiResponse<StyledDocument> response) {
     log.info("Received response with status {} and meta {}", response.status(), response.meta());
 
+    navigation.setCurrentUri(response.uri());
     response
         .body()
         .ifPresentOrElse(
             contentDisplay::setStyledDocument,
             () -> {
               final var doc = new BrowserDocument(theme);
-              doc.appendHeadingText(response.status().code() + " - " + response.status().name(), 1);
+              doc.appendHeadingText(response.status().code() + " - " + response.status(), 1);
               doc.appendText("\n\n" + response.meta() + "\n");
               contentDisplay.setStyledDocument(doc);
             });

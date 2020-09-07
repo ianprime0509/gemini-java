@@ -16,8 +16,11 @@ import io.netty.handler.ssl.SslHandler;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -28,7 +31,10 @@ import javax.net.ssl.SSLException;
 import javax.net.ssl.TrustManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import xyz.ianjohnson.gemini.GeminiStatus.Kind;
+import xyz.ianjohnson.gemini.StandardGeminiStatus;
 import xyz.ianjohnson.gemini.client.GeminiResponse.BodyHandler;
+import xyz.ianjohnson.gemini.client.GeminiResponse.Redirect;
 
 /**
  * A Gemini client.
@@ -44,6 +50,7 @@ public final class GeminiClient implements Closeable {
   private final boolean userProvidedExecutor;
   private final EventLoopGroup eventLoopGroup;
   private final SslContext sslContext;
+  private final int maxRedirects;
 
   private GeminiClient(final Builder builder) {
     if (builder.executor != null) {
@@ -71,6 +78,7 @@ public final class GeminiClient implements Closeable {
     } catch (final SSLException e) {
       throw new IllegalStateException("Failed to construct SslContext", e);
     }
+    maxRedirects = builder.maxRedirects;
   }
 
   /**
@@ -185,12 +193,8 @@ public final class GeminiClient implements Closeable {
     if (uri.getScheme() != null && !GEMINI_SCHEME.equalsIgnoreCase(uri.getScheme())) {
       throw new IllegalArgumentException("URI scheme must be gemini");
     }
-    if (uri.getHost() == null) {
-      throw new IllegalArgumentException("URI missing host");
-    }
-    final var port = uri.getPort() != -1 ? uri.getPort() : GEMINI_PORT;
 
-    return sendAsync(uri.getHost(), port, uri, responseBodyHandler);
+    return sendAsync(uri.getHost(), uri.getPort(), uri, responseBodyHandler);
   }
 
   /**
@@ -206,6 +210,22 @@ public final class GeminiClient implements Closeable {
    */
   public <T> CompletableFuture<GeminiResponse<T>> sendAsync(
       final String host, final int port, final URI uri, final BodyHandler<T> responseBodyHandler) {
+    return sendAsync(host, port, uri, responseBodyHandler, new ArrayList<>());
+  }
+
+  private <T> CompletableFuture<GeminiResponse<T>> sendAsync(
+      final String host,
+      final int providedPort,
+      final URI uri,
+      final BodyHandler<T> responseBodyHandler,
+      final List<Redirect> redirects) {
+    if (redirects.size() > maxRedirects) {
+      return CompletableFuture.failedFuture(new TooManyRedirectsException(redirects));
+    } else if (host == null || host.isEmpty()) {
+      throw new IllegalArgumentException("Invalid host");
+    }
+    final var port = providedPort != -1 ? providedPort : GEMINI_PORT;
+
     log.debug("Connecting to host {} on port {}", host, port);
 
     final CompletableFuture<GeminiResponse<T>> future = new FutureImpl<>();
@@ -257,7 +277,43 @@ public final class GeminiClient implements Closeable {
                       });
             });
 
-    return future;
+    return future.thenCompose(
+        response -> {
+          final var redirectFuture = new FutureImpl<GeminiResponse<T>>();
+          if (response.status().kind() == Kind.REDIRECT) {
+            final URI redirectUri;
+            try {
+              redirectUri = uri.resolve(new URI(response.meta().strip()));
+            } catch (final URISyntaxException e) {
+              redirectFuture.completeExceptionally(
+                  new MalformedResponseException("Invalid URI for redirect", e));
+              return redirectFuture;
+            }
+
+            if (redirectUri.getHost() == null || redirectUri.getHost().isEmpty()) {
+              redirectFuture.completeExceptionally(
+                  new MalformedResponseException("Redirect URI missing host: " + redirectUri));
+              return redirectFuture;
+            }
+            if (redirectUri.getScheme() != null
+                && !redirectUri.getScheme().equalsIgnoreCase(GEMINI_SCHEME)) {
+              // Cannot handle non-Gemini redirect
+              redirectFuture.complete(response);
+              return redirectFuture;
+            }
+            redirects.add(
+                Redirect.of(
+                    redirectUri, response.status() == StandardGeminiStatus.PERMANENT_REDIRECT));
+            return sendAsync(
+                redirectUri.getHost(),
+                redirectUri.getPort(),
+                redirectUri,
+                responseBodyHandler,
+                redirects);
+          }
+          redirectFuture.complete(response);
+          return redirectFuture;
+        });
   }
 
   /**
@@ -273,6 +329,7 @@ public final class GeminiClient implements Closeable {
   public static final class Builder {
     private Executor executor;
     private TrustManager trustManager;
+    private int maxRedirects = 5;
 
     private Builder() {}
 
@@ -305,6 +362,25 @@ public final class GeminiClient implements Closeable {
      */
     public Builder trustManager(final TrustManager trustManager) {
       this.trustManager = requireNonNull(trustManager, "trustManager");
+      return this;
+    }
+
+    /**
+     * Sets the maximum number of redirects to follow when handling a request.
+     *
+     * <p>If no maximum is explicitly provided using this method, the default number is 5. Note that
+     * since {@link GeminiClient} can only make Gemini requests, any redirects to services using
+     * other protocols (as indicated by the URI scheme) will result in the client returning a {@link
+     * GeminiResponse} indicating a redirect.
+     *
+     * @param maxRedirects the maximum number of redirects to follow when handling a request
+     * @return {@code this}
+     */
+    public Builder maxRedirects(final int maxRedirects) {
+      if (maxRedirects < 0) {
+        throw new IllegalArgumentException("maxRedirects must not be negative");
+      }
+      this.maxRedirects = maxRedirects;
       return this;
     }
 

@@ -49,6 +49,25 @@ public abstract class GeminiResponse<T> {
   /** The decoded response body, if any. */
   public abstract Optional<T> body();
 
+  /** Details about a redirect requested by the server. */
+  @AutoValue
+  public abstract static class Redirect {
+    Redirect() {}
+
+    public static Redirect of(final URI uri, final boolean permanent) {
+      return new AutoValue_GeminiResponse_Redirect(uri, permanent);
+    }
+
+    /** The {@link URI} that the server requested the client to redirect to. */
+    public abstract URI uri();
+
+    /**
+     * Whether the server indicated that the redirect was permanent (using the response status
+     * {@link xyz.ianjohnson.gemini.StandardGeminiStatus#PERMANENT_REDIRECT}).
+     */
+    public abstract boolean permanent();
+  }
+
   /**
    * A response body handler, returning an object that can decode a response body based on its MIME
    * type.
