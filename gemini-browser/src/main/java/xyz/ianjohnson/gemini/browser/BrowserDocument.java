@@ -10,6 +10,7 @@ import javax.swing.text.SimpleAttributeSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import xyz.ianjohnson.gemini.Nullable;
+import xyz.ianjohnson.gemini.browser.BrowserStyleConstants.WrapStyle;
 
 /**
  * An extension of {@link DefaultStyledDocument} that supports additional methods facilitating
@@ -81,7 +82,11 @@ public class BrowserDocument extends DefaultStyledDocument {
    * @see BrowserTheme#preformattedTextStyle()
    */
   public void appendPreformattedText(final String text) {
+    final var startOffset = getLength();
     append(text, theme.preformattedTextStyle());
+    final var attrs = new SimpleAttributeSet();
+    BrowserStyleConstants.setWrapStyle(attrs, WrapStyle.NONE);
+    setParagraphAttributes(startOffset, text.length(), attrs, false);
   }
 
   /**

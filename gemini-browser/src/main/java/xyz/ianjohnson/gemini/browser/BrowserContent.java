@@ -7,6 +7,7 @@ import java.awt.event.MouseMotionAdapter;
 import java.net.URI;
 import javax.swing.JTextPane;
 import javax.swing.event.EventListenerList;
+import javax.swing.text.EditorKit;
 
 public class BrowserContent extends JTextPane {
   protected final EventListenerList listenerList = new EventListenerList();
@@ -36,6 +37,11 @@ public class BrowserContent extends JTextPane {
 
   public void removeLinkListener(final LinkListener listener) {
     listenerList.remove(LinkListener.class, listener);
+  }
+
+  @Override
+  protected EditorKit createDefaultEditorKit() {
+    return new BrowserEditorKit();
   }
 
   protected void fireLinkClicked(final URI uri) {
