@@ -1,6 +1,7 @@
 package xyz.ianjohnson.gemini.browser;
 
 import java.nio.charset.Charset;
+import java.util.Optional;
 import javax.swing.text.StyledDocument;
 import xyz.ianjohnson.gemini.GeminiDocument;
 import xyz.ianjohnson.gemini.GeminiHeadingLine;
@@ -15,15 +16,16 @@ import xyz.ianjohnson.gemini.client.GeminiResponse.BodySubscribers;
 
 public final class GeminiDocumentRenderer implements DocumentRenderer {
   @Override
-  public boolean canRender(final MimeType mimeType) {
-    return mimeType.sameType(MimeType.TEXT_GEMINI);
-  }
-
-  @Override
-  public BodySubscriber<StyledDocument> render(final MimeType mimeType, final BrowserTheme theme) {
-    return BodySubscribers.mapping(
-        BodySubscribers.ofString(Charset.forName(mimeType.parameter("charset").orElse("utf-8"))),
-        text -> render(text, theme));
+  public Optional<BodySubscriber<StyledDocument>> render(
+      final MimeType mimeType, final BrowserTheme theme) {
+    if (!mimeType.sameType(MimeType.TEXT_GEMINI)) {
+      return Optional.empty();
+    }
+    return Optional.of(
+        BodySubscribers.mapping(
+            BodySubscribers.ofString(
+                Charset.forName(mimeType.parameter("charset").orElse("utf-8"))),
+            text -> render(text, theme)));
   }
 
   private StyledDocument render(final String text, final BrowserTheme theme) {

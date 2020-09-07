@@ -9,6 +9,7 @@ import java.awt.event.WindowEvent;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -29,6 +30,8 @@ import javax.swing.JMenuItem;
 import javax.swing.JScrollPane;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
+import javax.swing.event.HyperlinkEvent;
+import javax.swing.event.HyperlinkEvent.EventType;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
@@ -97,23 +100,7 @@ public class Browser extends JFrame {
 
     contentDisplay = new BrowserContent();
     add(new JScrollPane(contentDisplay), BorderLayout.CENTER);
-    contentDisplay.addLinkListener(
-        new LinkListener() {
-          @Override
-          public void linkClicked(final LinkEvent e) {
-            navigation.navigate(e.getUri());
-          }
-
-          @Override
-          public void linkHoverStarted(final LinkEvent e) {
-            statusBar.setTemporaryText(e.getUri().toString());
-          }
-
-          @Override
-          public void linkHoverEnded(final LinkEvent e) {
-            statusBar.setTemporaryText(null);
-          }
-        });
+    contentDisplay.addHyperlinkListener(this::handleHyperlinkUpdate);
 
     statusBar = new BrowserStatusBar();
     add(statusBar, BorderLayout.PAGE_END);
@@ -183,6 +170,33 @@ public class Browser extends JFrame {
     log.info("Saved key store to {}", KEY_STORE_PATH);
   }
 
+  private void handleHyperlinkUpdate(final HyperlinkEvent e) {
+    URI uri = null;
+    if (e.getURL() != null) {
+      try {
+        uri = e.getURL().toURI();
+      } catch (final URISyntaxException ignored) {
+      }
+    }
+    if (uri == null && e.getDescription() != null) {
+      try {
+        uri = new URI(e.getDescription());
+      } catch (final URISyntaxException ignored) {
+      }
+    }
+    if (uri == null) {
+      return;
+    }
+
+    if (e.getEventType() == EventType.ACTIVATED) {
+      navigation.navigate(uri);
+    } else if (e.getEventType() == EventType.ENTERED) {
+      statusBar.setTemporaryText(uri.toString());
+    } else if (e.getEventType() == EventType.EXITED) {
+      statusBar.setTemporaryText(null);
+    }
+  }
+
   private void load(final URI uri) {
     if (uri.getHost() == null) {
       statusBar.setText("Host required");
@@ -203,8 +217,9 @@ public class Browser extends JFrame {
 
   private BodySubscriber<StyledDocument> render(final MimeType type) {
     for (final var renderer : ServiceLoader.load(DocumentRenderer.class)) {
-      if (renderer.canRender(type)) {
-        return renderer.render(type, theme);
+      final var subscriber = renderer.render(type, theme);
+      if (subscriber.isPresent()) {
+        return subscriber.get();
       }
     }
     throw new UnsupportedMimeTypeException(type);
