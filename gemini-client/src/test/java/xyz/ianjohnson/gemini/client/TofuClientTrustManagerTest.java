@@ -11,6 +11,7 @@ import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -157,6 +158,11 @@ public class TofuClientTrustManagerTest {
 
     public ConcurrentMap<String, X509Certificate> certificates() {
       return certificates;
+    }
+
+    @Override
+    public List<String> hosts() {
+      return List.copyOf(certificates.keySet());
     }
 
     @Override

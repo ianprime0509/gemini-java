@@ -1,8 +1,12 @@
 package xyz.ianjohnson.gemini.client;
 
+import static java.util.Collections.list;
+
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -63,8 +67,25 @@ public class KeyStoreManager implements CertificateManager {
   }
 
   @Override
+  public List<String> hosts() throws KeyStoreException {
+    readLock().lock();
+    try {
+      final var aliases = list(keyStore.aliases());
+      final var hosts = new ArrayList<String>();
+      for (final var alias : aliases) {
+        if (alias.startsWith(CERTIFICATE_ALIAS_PREFIX) && keyStore.isCertificateEntry(alias)) {
+          hosts.add(alias.substring(CERTIFICATE_ALIAS_PREFIX.length()));
+        }
+      }
+      return hosts;
+    } finally {
+      readLock().unlock();
+    }
+  }
+
+  @Override
   public Optional<X509Certificate> getCertificate(final String host) throws KeyStoreException {
-    keyStoreLock.readLock().lock();
+    readLock().lock();
     try {
       final var cert = keyStore.getCertificate(CERTIFICATE_ALIAS_PREFIX + host);
       if (cert instanceof X509Certificate) {
@@ -72,18 +93,18 @@ public class KeyStoreManager implements CertificateManager {
       }
       return Optional.empty();
     } finally {
-      keyStoreLock.readLock().unlock();
+      readLock().unlock();
     }
   }
 
   @Override
   public void setCertificate(final String host, final X509Certificate certificate)
       throws KeyStoreException {
-    keyStoreLock.writeLock().lock();
+    writeLock().lock();
     try {
       keyStore.setCertificateEntry(CERTIFICATE_ALIAS_PREFIX + host, certificate);
     } finally {
-      keyStoreLock.writeLock().unlock();
+      writeLock().unlock();
     }
   }
 }

@@ -3,6 +3,7 @@ package xyz.ianjohnson.gemini.client;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.cert.X509Certificate;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -11,6 +12,15 @@ import java.util.Optional;
  * read and updated from multiple threads concurrently.
  */
 public interface CertificateManager {
+  /**
+   * Returns the hosts for which a certificate exists.
+   *
+   * @return the hosts for which a certificate exists
+   * @throws KeyStoreException if there is an exception reading from the underlying certificate
+   *     storage
+   */
+  List<String> hosts() throws KeyStoreException;
+
   /**
    * Returns the trusted certificate for the given host.
    *

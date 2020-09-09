@@ -9,7 +9,6 @@ import java.awt.event.WindowEvent;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.KeyStoreException;
@@ -129,38 +128,55 @@ public class Browser extends JFrame {
     SwingUtilities.invokeLater(() -> new Browser().setVisible(true));
   }
 
-  private void handleHyperlinkUpdate(final HyperlinkEvent e) {
-    URI uri = null;
-    if (e.getURL() != null) {
-      try {
-        uri = e.getURL().toURI();
-      } catch (final URISyntaxException ignored) {
-      }
-    }
-    if (uri == null && e.getDescription() != null) {
-      try {
-        uri = new URI(e.getDescription());
-      } catch (final URISyntaxException ignored) {
-      }
-    }
-    if (uri == null) {
-      return;
-    }
+  public KeyStoreManager keyStoreManager() {
+    return keyStoreManager;
+  }
 
-    if (e.getEventType() == EventType.ACTIVATED) {
-      navigation.navigate(uri);
-    } else if (e.getEventType() == EventType.ENTERED) {
-      statusBar.setTemporaryText(uri.toString());
-    } else if (e.getEventType() == EventType.EXITED) {
-      statusBar.setTemporaryText(null);
-    }
+  public BrowserTheme theme() {
+    return theme;
+  }
+
+  private void handleHyperlinkUpdate(final HyperlinkEvent e) {
+    Events.getUri(e)
+        .ifPresent(
+            uri -> {
+              if (e.getEventType() == EventType.ACTIVATED) {
+                navigation.navigate(uri);
+              } else if (e.getEventType() == EventType.ENTERED) {
+                statusBar.setTemporaryText(uri.toString());
+              } else if (e.getEventType() == EventType.EXITED) {
+                statusBar.setTemporaryText(null);
+              }
+            });
   }
 
   private void load(final URI uri) {
-    if (uri.getHost() == null) {
+    if ("about".equalsIgnoreCase(uri.getScheme())) {
+      final var pathParts = uri.getSchemeSpecificPart().split("/", 2);
+      final var name = pathParts[0];
+      final var path = pathParts.length > 1 ? pathParts[1] : "";
+      for (final var page : ServiceLoader.load(AboutPage.class)) {
+        if (name.equalsIgnoreCase(page.name())) {
+          contentDisplay.setStyledDocument(page.display(path, this));
+          statusBar.setText(null);
+          return;
+        }
+      }
+
+      final var doc = new BrowserDocument(theme);
+      doc.appendHeadingText("Unknown about page", 1);
+      doc.appendText("\n\nUnknown about page: " + name + "\n");
+      contentDisplay.setStyledDocument(doc);
+      statusBar.setText("Unknown about page: " + name);
+      return;
+    } else if (uri.getScheme() != null && !"gemini".equalsIgnoreCase(uri.getScheme())) {
+      statusBar.setText("Unsupported URI scheme: " + uri.getScheme());
+      return;
+    } else if (uri.getHost() == null) {
       statusBar.setText("Host required");
       return;
     }
+
     statusBar.setText("Loading...");
     client
         .sendAsync(uri, this::render)
