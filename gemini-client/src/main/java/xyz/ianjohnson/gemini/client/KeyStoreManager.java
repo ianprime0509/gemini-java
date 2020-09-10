@@ -18,7 +18,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * <p>Trusted certificates are stored with aliases of the form {@code cer-<host>}, where {@code
  * <host>} is the name of the host.
  */
-public class KeyStoreManager implements CertificateManager {
+public final class KeyStoreManager implements CertificateManager {
   public static final String CERTIFICATE_ALIAS_PREFIX = "cer-";
 
   private final KeyStore keyStore;

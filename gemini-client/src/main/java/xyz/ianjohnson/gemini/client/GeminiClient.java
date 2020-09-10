@@ -228,21 +228,18 @@ public final class GeminiClient implements Closeable {
     log.debug("Connecting to host {} on port {}", host, port);
 
     final CompletableFuture<GeminiResponse<T>> future = new FutureImpl<>();
-    final var bootstrap =
-        new Bootstrap()
-            .group(eventLoopGroup)
-            .channel(NioSocketChannel.class)
-            .handler(
-                new ChannelInitializer<SocketChannel>() {
-                  @Override
-                  protected void initChannel(final SocketChannel ch) {
-                    ch.pipeline()
-                        .addLast("ssl", sslContext.newHandler(ch.alloc(), uri.getHost(), port))
-                        .addLast(new GeminiResponseHandler<>(uri, responseBodyHandler, future));
-                  }
-                });
-
-    bootstrap
+    new Bootstrap()
+        .group(eventLoopGroup)
+        .channel(NioSocketChannel.class)
+        .handler(
+            new ChannelInitializer<SocketChannel>() {
+              @Override
+              protected void initChannel(final SocketChannel ch) {
+                ch.pipeline()
+                    .addLast("ssl", sslContext.newHandler(ch.alloc(), uri.getHost(), port))
+                    .addLast(new GeminiResponseHandler<>(uri, responseBodyHandler, future));
+              }
+            })
         .connect(uri.getHost(), port)
         .addListener(
             (final ChannelFuture channelFuture) -> {
