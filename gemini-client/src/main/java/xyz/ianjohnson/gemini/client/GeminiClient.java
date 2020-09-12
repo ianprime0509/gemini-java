@@ -1,6 +1,5 @@
 package xyz.ianjohnson.gemini.client;
 
-import static io.netty.buffer.Unpooled.wrappedBuffer;
 import static java.util.Objects.requireNonNull;
 
 import io.netty.bootstrap.Bootstrap;
@@ -16,7 +15,6 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.util.ArrayList;
 import java.util.List;
@@ -250,7 +248,8 @@ public final class GeminiClient implements Closeable {
               protected void initChannel(final SocketChannel ch) {
                 ch.pipeline()
                     .addLast("ssl", sslContext.newHandler(ch.alloc(), uri.getHost(), port))
-                    .addLast(new GeminiResponseHandler<>(uri, responseBodyHandler, future));
+                    .addLast(new GeminiRequestEncoder())
+                    .addLast(new GeminiResponseDecoder<>(uri, responseBodyHandler, future));
               }
             })
         .connect(uri.getHost(), port)
@@ -265,7 +264,7 @@ public final class GeminiClient implements Closeable {
               future.whenComplete((response, e) -> channel.close());
 
               channel
-                  .writeAndFlush(wrappedBuffer((uri + "\r\n").getBytes(StandardCharsets.UTF_8)))
+                  .writeAndFlush(uri)
                   .addListener(
                       writeFuture -> {
                         if (!writeFuture.isSuccess()) {

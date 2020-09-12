@@ -6,7 +6,6 @@ import io.netty.handler.codec.LineBasedFrameDecoder;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
-import xyz.ianjohnson.gemini.GeminiStatus;
 import xyz.ianjohnson.gemini.StandardGeminiStatus;
 
 final class GeminiRequestDecoder extends LineBasedFrameDecoder {

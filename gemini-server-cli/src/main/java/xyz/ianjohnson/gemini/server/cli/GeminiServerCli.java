@@ -1,6 +1,5 @@
 package xyz.ianjohnson.gemini.server.cli;
 
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.KeyStore;

@@ -19,7 +19,7 @@ import xyz.ianjohnson.gemini.MimeTypeSyntaxException;
 import xyz.ianjohnson.gemini.StandardGeminiStatus;
 import xyz.ianjohnson.gemini.client.GeminiResponse.BodyHandlers;
 
-public class GeminiResponseHandlerTest {
+public class GeminiResponseDecoderTest {
   private static final int TIMEOUT_MILLISECONDS = 1000;
   private static final URI TEST_URI;
 
@@ -39,7 +39,7 @@ public class GeminiResponseHandlerTest {
     future = new CompletableFuture<>();
     channel =
         new EmbeddedChannel(
-            new GeminiResponseHandler<>(TEST_URI, BodyHandlers.ofByteArray(), future));
+            new GeminiResponseDecoder<>(TEST_URI, BodyHandlers.ofByteArray(), future));
   }
 
   @Test
@@ -117,7 +117,7 @@ public class GeminiResponseHandlerTest {
     final var future = new CompletableFuture<GeminiResponse<Void>>();
     final var channel =
         new EmbeddedChannel(
-            new GeminiResponseHandler<>(TEST_URI, BodyHandlers.discarding(), future));
+            new GeminiResponseDecoder<>(TEST_URI, BodyHandlers.discarding(), future));
     channel.writeInbound(wrappedBuffer(utf8("20 text/plain\r\nThis body will be ignored.\n")));
     channel.finish();
     channel.checkException();

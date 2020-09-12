@@ -1,4 +1,4 @@
-package xyz.ianjohnson.gemini.client;
+package xyz.ianjohnson.gemini.server;
 
 import java.nio.charset.StandardCharsets;
 
