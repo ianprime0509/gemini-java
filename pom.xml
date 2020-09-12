@@ -13,6 +13,8 @@
     <module>gemini-core</module>
     <module>gemini-client</module>
     <module>gemini-browser</module>
+    <module>gemini-server</module>
+    <module>gemini-server-cli</module>
   </modules>
 
   <properties>
@@ -24,8 +26,8 @@
     <auto-value.version>1.7.4</auto-value.version>
     <bouncycastle.version>1.66</bouncycastle.version>
     <directories.version>20</directories.version>
-    <logback.version>1.3.0-alpha5</logback.version>
     <netty.version>4.1.51.Final</netty.version>
+    <picocli.version>4.5.1</picocli.version>
     <slf4j.version>2.0.0-alpha1</slf4j.version>
 
     <assertj.version>3.15.0</assertj.version>
@@ -53,6 +55,11 @@
         <artifactId>gemini-client</artifactId>
         <version>${project.version}</version>
       </dependency>
+      <dependency>
+        <groupId>xyz.ianjohnson.gemini</groupId>
+        <artifactId>gemini-server</artifactId>
+        <version>${project.version}</version>
+      </dependency>
 
       <dependency>
         <groupId>com.google.auto.value</groupId>
@@ -70,13 +77,18 @@
         <version>${directories.version}</version>
       </dependency>
       <dependency>
-        <groupId>ch.qos.logback</groupId>
-        <artifactId>logback-classic</artifactId>
-        <version>${logback.version}</version>
+        <groupId>info.picocli</groupId>
+        <artifactId>picocli</artifactId>
+        <version>${picocli.version}</version>
       </dependency>
       <dependency>
         <groupId>org.slf4j</groupId>
         <artifactId>slf4j-api</artifactId>
+        <version>${slf4j.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-simple</artifactId>
         <version>${slf4j.version}</version>
       </dependency>
 
