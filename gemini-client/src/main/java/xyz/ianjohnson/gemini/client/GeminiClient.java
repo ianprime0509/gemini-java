@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -209,7 +210,19 @@ public final class GeminiClient implements Closeable {
    */
   public <T> CompletableFuture<GeminiResponse<T>> sendAsync(
       final String host, final int port, final URI uri, final BodyHandler<T> responseBodyHandler) {
-    return sendAsync(host, port, uri, responseBodyHandler, new ArrayList<>());
+    final var future = new FutureImpl<GeminiResponse<T>>();
+    sendAsync(host, port, uri, responseBodyHandler, new ArrayList<>())
+        .whenComplete(
+            (response, t) -> {
+              if (response != null) {
+                future.complete(response);
+              } else if (t instanceof CompletionException) {
+                future.completeExceptionally(t.getCause());
+              } else {
+                future.completeExceptionally(t);
+              }
+            });
+    return future;
   }
 
   private <T> CompletableFuture<GeminiResponse<T>> sendAsync(
