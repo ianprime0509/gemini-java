@@ -6,9 +6,9 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.Flow.Publisher;
-import java.util.concurrent.Flow.Subscription;
-import java.util.concurrent.atomic.AtomicBoolean;
 import xyz.ianjohnson.gemini.GeminiStatus;
+import xyz.ianjohnson.gemini.server.BodyPublisherImpls.Empty;
+import xyz.ianjohnson.gemini.server.BodyPublisherImpls.OfByteArray;
 
 @AutoValue
 public abstract class GeminiResponse {
@@ -32,45 +32,14 @@ public abstract class GeminiResponse {
   public abstract Publisher<List<ByteBuffer>> bodyPublisher();
 
   public static final class BodyPublishers {
-    private static final Publisher<List<ByteBuffer>> EMPTY =
-        subscriber -> {
-          subscriber.onSubscribe(
-              new Subscription() {
-                @Override
-                public void request(final long n) {}
-
-                @Override
-                public void cancel() {}
-              });
-          subscriber.onComplete();
-        };
-
     private BodyPublishers() {}
 
     public static Publisher<List<ByteBuffer>> empty() {
-      return EMPTY;
+      return Empty.INSTANCE;
     }
 
     public static Publisher<List<ByteBuffer>> ofByteArray(final byte[] bytes) {
-      return subscriber ->
-          subscriber.onSubscribe(
-              new Subscription() {
-                private final AtomicBoolean done = new AtomicBoolean();
-
-                @Override
-                public void request(final long n) {
-                  if (n <= 0) {
-                    subscriber.onError(
-                        new IllegalArgumentException("Requested items must be positive"));
-                  } else if (!done.getAndSet(true)) {
-                    subscriber.onNext(List.of(ByteBuffer.wrap(bytes)));
-                    subscriber.onComplete();
-                  }
-                }
-
-                @Override
-                public void cancel() {}
-              });
+      return new OfByteArray(bytes);
     }
 
     public static Publisher<List<ByteBuffer>> ofString(final String s) {

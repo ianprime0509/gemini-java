@@ -4,16 +4,17 @@ import com.google.auto.value.AutoValue;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
 import java.util.function.Function;
 import xyz.ianjohnson.gemini.GeminiStatus;
 import xyz.ianjohnson.gemini.MimeType;
+import xyz.ianjohnson.gemini.client.BodySubscriberImpls.Discarding;
+import xyz.ianjohnson.gemini.client.BodySubscriberImpls.Mapping;
+import xyz.ianjohnson.gemini.client.BodySubscriberImpls.OfByteArray;
 
 /**
  * A decoded response from a Gemini server.
@@ -146,32 +147,7 @@ public abstract class GeminiResponse<T> {
      * @return a {@link BodySubscriber} that discards the entire response body
      */
     public static BodySubscriber<Void> discarding() {
-      return new BodySubscriber<>() {
-        private final CompletableFuture<Void> future = new CompletableFuture<>();
-
-        @Override
-        public CompletionStage<Void> getBody() {
-          return future;
-        }
-
-        @Override
-        public void onSubscribe(final Subscription subscription) {
-          subscription.request(Long.MAX_VALUE);
-        }
-
-        @Override
-        public void onNext(final List<ByteBuffer> item) {}
-
-        @Override
-        public void onError(final Throwable throwable) {
-          future.completeExceptionally(throwable);
-        }
-
-        @Override
-        public void onComplete() {
-          future.complete(null);
-        }
-      };
+      return new Discarding();
     }
 
     /**
@@ -180,46 +156,7 @@ public abstract class GeminiResponse<T> {
      * @return a {@link BodySubscriber} that collects the response body into a byte array
      */
     public static BodySubscriber<byte[]> ofByteArray() {
-      return new BodySubscriber<>() {
-        private final List<ByteBuffer> buffers = new ArrayList<>();
-        private final CompletableFuture<byte[]> future = new CompletableFuture<>();
-        private Subscription subscription;
-
-        @Override
-        public void onSubscribe(final Subscription subscription) {
-          this.subscription = subscription;
-          this.subscription.request(1);
-        }
-
-        @Override
-        public void onNext(final List<ByteBuffer> item) {
-          buffers.addAll(item);
-          this.subscription.request(1);
-        }
-
-        @Override
-        public void onError(final Throwable throwable) {
-          future.completeExceptionally(throwable);
-        }
-
-        @Override
-        public void onComplete() {
-          final var size = buffers.stream().mapToLong(buf -> buf.limit() - buf.position()).sum();
-          final var bytes = new byte[(int) Math.min(size, Integer.MAX_VALUE)];
-          var offset = 0;
-          for (final var buf : buffers) {
-            final var len = Math.min(buf.limit() - buf.position(), bytes.length - offset);
-            buf.get(bytes, offset, len);
-            offset += len;
-          }
-          future.complete(bytes);
-        }
-
-        @Override
-        public CompletionStage<byte[]> getBody() {
-          return future.minimalCompletionStage();
-        }
-      };
+      return new OfByteArray();
     }
 
     /**
@@ -245,32 +182,7 @@ public abstract class GeminiResponse<T> {
      */
     public static <T, U> BodySubscriber<U> mapping(
         final BodySubscriber<T> upstream, final Function<? super T, ? extends U> finisher) {
-      return new BodySubscriber<>() {
-        @Override
-        public void onSubscribe(final Subscription subscription) {
-          upstream.onSubscribe(subscription);
-        }
-
-        @Override
-        public void onNext(final List<ByteBuffer> item) {
-          upstream.onNext(item);
-        }
-
-        @Override
-        public void onError(final Throwable throwable) {
-          upstream.onError(throwable);
-        }
-
-        @Override
-        public void onComplete() {
-          upstream.onComplete();
-        }
-
-        @Override
-        public CompletionStage<U> getBody() {
-          return upstream.getBody().thenApply(finisher);
-        }
-      };
+      return new Mapping<>(upstream, finisher);
     }
   }
 
