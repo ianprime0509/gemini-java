@@ -5,6 +5,7 @@ import static io.netty.buffer.Unpooled.wrappedBuffer;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
+import io.netty.handler.codec.UnsupportedMessageTypeException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -13,12 +14,12 @@ import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
 import xyz.ianjohnson.gemini.GeminiStatus.Kind;
 
-final class GeminiResponseHandler extends ChannelOutboundHandlerAdapter {
+final class GeminiResponseEncoder extends ChannelOutboundHandlerAdapter {
   @Override
   public void write(
       final ChannelHandlerContext ctx, final Object msg, final ChannelPromise promise) {
     if (!(msg instanceof GeminiResponse)) {
-      ctx.write(msg, promise);
+      promise.setFailure(new UnsupportedMessageTypeException("Input must be a GeminiResponse"));
       return;
     }
 

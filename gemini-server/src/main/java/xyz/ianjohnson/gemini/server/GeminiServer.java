@@ -87,7 +87,7 @@ public final class GeminiServer implements Closeable {
                 ch.pipeline()
                     .addLast("ssl", sslContext.newHandler(ch.alloc()))
                     .addLast(new GeminiRequestDecoder())
-                    .addLast(new GeminiResponseHandler())
+                    .addLast(new GeminiResponseEncoder())
                     .addLast(new GeminiRequestHandler(handler));
                 ch.closeFuture()
                     .addListener(
