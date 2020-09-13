@@ -114,18 +114,22 @@ public class Browser extends JFrame {
   }
 
   public static void main(final String... args) {
+    setNimbusLookAndFeel();
+    SwingUtilities.invokeLater(() -> new Browser().setVisible(true));
+  }
+
+  private static void setNimbusLookAndFeel() {
     try {
       for (final var laf : UIManager.getInstalledLookAndFeels()) {
         if ("Nimbus".equals(laf.getName())) {
           UIManager.setLookAndFeel(laf.getClassName());
-          break;
+          return;
         }
       }
       log.error("Nimbus look and feel not found; using default");
     } catch (final Exception e) {
       log.error("Failed to set Nimbus look and feel; using default", e);
     }
-    SwingUtilities.invokeLater(() -> new Browser().setVisible(true));
   }
 
   public KeyStoreManager keyStoreManager() {
