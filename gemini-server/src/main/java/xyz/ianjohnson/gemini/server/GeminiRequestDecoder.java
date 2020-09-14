@@ -51,23 +51,23 @@ final class GeminiRequestDecoder extends DelimiterBasedFrameDecoder {
       return null;
     }
 
-    final URI uri;
     try {
-      uri = new URI(bytes.toString(StandardCharsets.UTF_8));
-    } catch (final URISyntaxException e) {
+      return GeminiRequest.newBuilder()
+          .localAddress(ctx.channel().localAddress())
+          .remoteAddress(ctx.channel().remoteAddress())
+          .uri(new URI(bytes.toString(StandardCharsets.UTF_8)))
+          .build();
+    } catch (final URISyntaxException | IllegalArgumentException e) {
       log.atWarn()
           .setCause(e)
           .addKeyValue("remoteAddress", ctx.channel().remoteAddress())
           .addKeyValue("localAddress", ctx.channel().localAddress())
           .log("Bad request - invalid request URI");
-      ctx.writeAndFlush(GeminiResponse.of(StandardGeminiStatus.BAD_REQUEST, "Invalid request URI"))
+      ctx.writeAndFlush(
+              GeminiResponse.of(
+                  StandardGeminiStatus.BAD_REQUEST, "Invalid request URI: " + e.getMessage()))
           .addListener(ChannelFutureListener.CLOSE);
       return null;
     }
-    return GeminiRequest.newBuilder()
-        .localAddress(ctx.channel().localAddress())
-        .remoteAddress(ctx.channel().remoteAddress())
-        .uri(uri)
-        .build();
   }
 }

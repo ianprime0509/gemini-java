@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Flow.Subscriber;
-import java.util.concurrent.Flow.Subscription;
 import java.util.function.Function;
 import xyz.ianjohnson.gemini.GeminiStatus;
 import xyz.ianjohnson.gemini.MimeType;

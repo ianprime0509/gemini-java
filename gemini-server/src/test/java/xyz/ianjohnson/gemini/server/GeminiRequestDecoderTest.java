@@ -46,7 +46,7 @@ public class GeminiRequestDecoderTest {
 
   @Test
   public void testDecode_withValidRequestAtMaximumLength_decodesRequest() {
-    channel.writeInbound(wrappedBuffer(utf8("A".repeat(1024) + "\r\n")));
+    channel.writeInbound(wrappedBuffer(utf8("//" + "A".repeat(1022) + "\r\n")));
     channel.finish();
     channel.checkException();
 
@@ -54,7 +54,7 @@ public class GeminiRequestDecoderTest {
     assertThat(channel.<Object>readInbound())
         .isInstanceOfSatisfying(
             GeminiRequest.class,
-            request -> assertThat(request.uri()).isEqualTo(URI.create("A".repeat(1024))));
+            request -> assertThat(request.uri()).isEqualTo(URI.create("//" + "A".repeat(1022))));
   }
 
   @Test
@@ -69,7 +69,23 @@ public class GeminiRequestDecoderTest {
             GeminiResponse.class,
             response -> {
               assertThat(response.status()).isEqualTo(StandardGeminiStatus.BAD_REQUEST);
-              assertThat(response.meta()).isEqualTo("Invalid request URI");
+              assertThat(response.meta()).startsWith("Invalid request URI");
+            });
+  }
+
+  @Test
+  public void testDecode_withRequestUriMissingHost_returnsBadRequestResponse() {
+    channel.writeInbound(wrappedBuffer(utf8("invalid\r\n")));
+    channel.finish();
+    channel.checkException();
+
+    assertThat(channel.<Object>readInbound()).isNull();
+    assertThat(channel.<Object>readOutbound())
+        .isInstanceOfSatisfying(
+            GeminiResponse.class,
+            response -> {
+              assertThat(response.status()).isEqualTo(StandardGeminiStatus.BAD_REQUEST);
+              assertThat(response.meta()).isEqualTo("Invalid request URI: Host is required");
             });
   }
 
