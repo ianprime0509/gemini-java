@@ -89,9 +89,7 @@ final class MimeTypeParser {
   }
 
   private boolean isTokenChar(final char c) {
-    return c < 0x80 && c > 0x20 && c != '(' && c != ')' && c != '<' && c != '>' && c != '@'
-        && c != ',' && c != ';' && c != ':' && c != '\\' && c != '"' && c != '/' && c != '['
-        && c != ']' && c != '?' && c != '=';
+    return c < 0x80 && c > 0x20 && "()<>@,;:\\\"/[]?=".indexOf(c) == -1;
   }
 
   private void character(final char c) throws MimeTypeSyntaxException {
