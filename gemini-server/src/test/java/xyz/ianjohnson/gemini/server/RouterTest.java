@@ -179,14 +179,6 @@ public class RouterTest {
   }
 
   @Test
-  public void testApply_withNonTreeRootRequestAndNonTreeRootPrefix_appliesHandler() {
-    final var response = GeminiResponse.of(StandardGeminiStatus.INPUT, "Test");
-    final var router = Router.newBuilder().addPrefixRoute("", r -> response).build();
-
-    assertThat(router.apply(newRequest("gemini://localhost"))).isEqualTo(response);
-  }
-
-  @Test
   public void testApply_withNoPrefixMatch_returnsNotFound() {
     final var response = GeminiResponse.of(StandardGeminiStatus.INPUT, "Test");
     final var response2 = GeminiResponse.of(StandardGeminiStatus.INPUT, "Test2");
@@ -218,6 +210,19 @@ public class RouterTest {
 
     assertThat(router.apply(newRequest("gemini://localhost/././././tree")))
         .isEqualTo(GeminiResponse.of(StandardGeminiStatus.NOT_FOUND, "Not found"));
+  }
+
+  @Test
+  public void testApply_withEncodedCharacters_doesNotTreatEncodedSlashesAsPathSeparators() {
+    final var response = GeminiResponse.of(StandardGeminiStatus.INPUT, "Test");
+    final var response2 = GeminiResponse.of(StandardGeminiStatus.INPUT, "Test2");
+    final var router =
+        Router.newBuilder()
+            .addPrefixRoute("/path/subpath", r -> response)
+            .addPrefixRoute("/path", r -> response2)
+            .build();
+
+    assertThat(router.apply(newRequest("gemini://localhost/path%2Fsubpath"))).isEqualTo(response2);
   }
 
   public static class BuilderTest {
