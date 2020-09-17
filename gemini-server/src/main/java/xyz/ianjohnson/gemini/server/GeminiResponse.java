@@ -4,7 +4,6 @@ import com.google.auto.value.AutoValue;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.concurrent.Flow.Publisher;
 import xyz.ianjohnson.gemini.GeminiStatus;
 import xyz.ianjohnson.gemini.server.BodyPublisherImpls.Empty;
@@ -19,9 +18,7 @@ public abstract class GeminiResponse {
   }
 
   public static GeminiResponse of(
-      final GeminiStatus status,
-      final String meta,
-      final Publisher<List<ByteBuffer>> bodyPublisher) {
+      final GeminiStatus status, final String meta, final Publisher<ByteBuffer> bodyPublisher) {
     return new AutoValue_GeminiResponse(status, meta, bodyPublisher);
   }
 
@@ -29,24 +26,24 @@ public abstract class GeminiResponse {
 
   public abstract String meta();
 
-  public abstract Publisher<List<ByteBuffer>> bodyPublisher();
+  public abstract Publisher<ByteBuffer> bodyPublisher();
 
   public static final class BodyPublishers {
     private BodyPublishers() {}
 
-    public static Publisher<List<ByteBuffer>> empty() {
+    public static Publisher<ByteBuffer> empty() {
       return Empty.INSTANCE;
     }
 
-    public static Publisher<List<ByteBuffer>> ofByteArray(final byte[] bytes) {
+    public static Publisher<ByteBuffer> ofByteArray(final byte[] bytes) {
       return new OfByteArray(bytes);
     }
 
-    public static Publisher<List<ByteBuffer>> ofString(final String s) {
+    public static Publisher<ByteBuffer> ofString(final String s) {
       return ofString(s, StandardCharsets.UTF_8);
     }
 
-    public static Publisher<List<ByteBuffer>> ofString(final String s, final Charset charset) {
+    public static Publisher<ByteBuffer> ofString(final String s, final Charset charset) {
       return ofByteArray(s.getBytes(charset));
     }
   }

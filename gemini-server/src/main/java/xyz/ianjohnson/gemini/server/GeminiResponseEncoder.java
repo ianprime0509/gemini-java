@@ -8,7 +8,6 @@ import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.UnsupportedMessageTypeException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
@@ -42,7 +41,7 @@ final class GeminiResponseEncoder extends ChannelOutboundHandlerAdapter {
   }
 
   private void sendBody(
-      final Publisher<List<ByteBuffer>> bodyPublisher,
+      final Publisher<ByteBuffer> bodyPublisher,
       final ChannelHandlerContext ctx,
       final ChannelPromise promise) {
     bodyPublisher.subscribe(
@@ -57,8 +56,8 @@ final class GeminiResponseEncoder extends ChannelOutboundHandlerAdapter {
           }
 
           @Override
-          public void onNext(final List<ByteBuffer> item) {
-            ctx.write(wrappedBuffer(item.toArray(new ByteBuffer[0])))
+          public void onNext(final ByteBuffer item) {
+            ctx.write(wrappedBuffer(item))
                 .addListener(
                     f -> {
                       if (!f.isSuccess()) {

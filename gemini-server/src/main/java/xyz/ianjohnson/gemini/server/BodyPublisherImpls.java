@@ -2,7 +2,6 @@ package xyz.ianjohnson.gemini.server;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
-import java.util.List;
 import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.Flow.Subscription;
@@ -11,13 +10,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class BodyPublisherImpls {
   private BodyPublisherImpls() {}
 
-  static class Empty implements Publisher<List<ByteBuffer>> {
+  static class Empty implements Publisher<ByteBuffer> {
     static final Empty INSTANCE = new Empty();
 
     private Empty() {}
 
     @Override
-    public void subscribe(final Subscriber<? super List<ByteBuffer>> subscriber) {
+    public void subscribe(final Subscriber<? super ByteBuffer> subscriber) {
       subscriber.onSubscribe(
           new Subscription() {
             @Override
@@ -35,7 +34,7 @@ final class BodyPublisherImpls {
     }
   }
 
-  static class OfByteArray implements Publisher<List<ByteBuffer>> {
+  static class OfByteArray implements Publisher<ByteBuffer> {
     private final byte[] bytes;
 
     OfByteArray(final byte[] bytes) {
@@ -43,7 +42,7 @@ final class BodyPublisherImpls {
     }
 
     @Override
-    public void subscribe(final Subscriber<? super List<ByteBuffer>> subscriber) {
+    public void subscribe(final Subscriber<? super ByteBuffer> subscriber) {
       subscriber.onSubscribe(
           new Subscription() {
             private final AtomicBoolean done = new AtomicBoolean();
@@ -54,7 +53,7 @@ final class BodyPublisherImpls {
                 subscriber.onError(
                     new IllegalArgumentException("Requested items must be positive"));
               } else if (!done.getAndSet(true)) {
-                subscriber.onNext(List.of(ByteBuffer.wrap(bytes)));
+                subscriber.onNext(ByteBuffer.wrap(bytes));
                 subscriber.onComplete();
               }
             }

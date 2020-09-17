@@ -7,7 +7,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscriber;
@@ -47,7 +46,7 @@ public class GeminiResponseTest {
           .containsExactly("Hello, world!".getBytes(StandardCharsets.UTF_16BE));
     }
 
-    private byte[] collectBytes(final Publisher<List<ByteBuffer>> publisher) throws Throwable {
+    private byte[] collectBytes(final Publisher<ByteBuffer> publisher) throws Throwable {
       final var output = new ByteArrayOutputStream();
       final var future = new CompletableFuture<Void>();
       publisher.subscribe(
@@ -61,16 +60,14 @@ public class GeminiResponseTest {
             }
 
             @Override
-            public void onNext(final List<ByteBuffer> item) {
-              for (final var buf : item) {
-                final var bytes = new byte[buf.remaining()];
-                buf.get(bytes);
-                synchronized (output) {
-                  try {
-                    output.write(bytes);
-                  } catch (final IOException ignored) {
-                    // Impossible
-                  }
+            public void onNext(final ByteBuffer item) {
+              final var bytes = new byte[item.remaining()];
+              item.get(bytes);
+              synchronized (output) {
+                try {
+                  output.write(bytes);
+                } catch (final IOException ignored) {
+                  // Impossible
                 }
               }
               subscription.request(1);

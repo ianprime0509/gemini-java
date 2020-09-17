@@ -10,7 +10,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.UnsupportedMessageTypeException;
 import java.nio.ByteBuffer;
-import java.util.List;
 import java.util.concurrent.Flow.Publisher;
 import java.util.concurrent.Flow.Subscription;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,7 +62,7 @@ public class GeminiResponseEncoderTest {
 
   @Test
   public void testEncode_withErrorInBodyPublisher_rethrowsError() {
-    final Publisher<List<ByteBuffer>> publisher =
+    final Publisher<ByteBuffer> publisher =
         subscriber -> {
           subscriber.onSubscribe(
               new Subscription() {
