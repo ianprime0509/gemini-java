@@ -53,7 +53,7 @@ final class BodyPublisherImpls {
                 subscriber.onError(
                     new IllegalArgumentException("Requested items must be positive"));
               } else if (!done.getAndSet(true)) {
-                subscriber.onNext(ByteBuffer.wrap(bytes));
+                subscriber.onNext(ByteBuffer.wrap(bytes).asReadOnlyBuffer());
                 subscriber.onComplete();
               }
             }
