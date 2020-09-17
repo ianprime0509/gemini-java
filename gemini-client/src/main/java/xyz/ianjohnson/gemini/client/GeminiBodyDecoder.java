@@ -7,13 +7,16 @@ import io.netty.handler.codec.UnsupportedMessageTypeException;
 import io.netty.util.ReferenceCountUtil;
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Flow;
 import java.util.concurrent.Flow.Subscriber;
 import java.util.concurrent.SubmissionPublisher;
 
 final class GeminiBodyDecoder extends ChannelInboundHandlerAdapter {
-  private final SubmissionPublisher<List<ByteBuffer>> publisher = new SubmissionPublisher<>();
+  private final SubmissionPublisher<List<ByteBuffer>> publisher;
 
-  GeminiBodyDecoder(final Subscriber<List<ByteBuffer>> subscriber) {
+  GeminiBodyDecoder(final Subscriber<List<ByteBuffer>> subscriber, final Executor executor) {
+    publisher = new SubmissionPublisher<>(executor, Flow.defaultBufferSize());
     publisher.subscribe(subscriber);
   }
 

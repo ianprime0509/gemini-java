@@ -106,7 +106,8 @@ final class GeminiResponseDecoder<T> extends DelimiterBasedFrameDecoder {
                 }
                 ctx.close();
               });
-      ctx.pipeline().replace(this, ctx.name(), new GeminiBodyDecoder(subscriber));
+      ctx.pipeline()
+          .replace(this, ctx.name(), new GeminiBodyDecoder(subscriber, future.defaultExecutor()));
     } else {
       future.complete(responseBuilder.build());
       ctx.close();
